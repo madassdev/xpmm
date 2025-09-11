@@ -16,11 +16,5 @@ export default defineConfig({
                 },
             },
         }),
-    ],
-    server: {
-        host: 'xpmm.dv',
-        watch: {
-            usePolling: true,
-        },
-    },
+    ]
 });
