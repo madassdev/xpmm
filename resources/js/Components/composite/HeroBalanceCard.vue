@@ -27,7 +27,7 @@ const displayBalance = computed(() => show.value ? `${props.symbol}${fmt(props.b
 </script>
 
 <template>
-  <Card as="section" padding="lg">
+  <!-- <Card as="section" padding="lg"> -->
     <div class="relative overflow-hidden rounded-2xl bg-[#0E1116] text-white">
       <div class="absolute inset-y-0 right-0 w-1/2 pointer-events-none">
         <slot name="media">
@@ -68,5 +68,5 @@ const displayBalance = computed(() => show.value ? `${props.symbol}${fmt(props.b
         <div class="w-2/3 max-w-sm h-7 rounded bg-white/20 animate-pulse"></div>
       </div>
     </div>
-  </Card>
+  <!-- </Card> -->
 </template>
