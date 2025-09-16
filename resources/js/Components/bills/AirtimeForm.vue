@@ -1,13 +1,15 @@
 <script setup>
+import { ref, computed } from 'vue'
 import Card from '@/Components/ui/Card.vue'
 import Button from '@/Components/ui/Button.vue'
+
 import BrandSelect from '@/Components/bills/BrandSelect.vue'
 import AssetSelect from '@/Components/bills/AssetSelect.vue'
 import BillsPayModal from '@/Components/bills/shared/BillsPayModal.vue'
-import { ChevronDown } from 'lucide-vue-next'
-import { ref, computed } from 'vue'
+import PhoneInputWithBeneficiaries from '@/Components/bills/shared/PhoneInputWithBeneficiaries.vue'
+import { useBeneficiaries } from '@/composables/useBeneficiaries'
 
-// Select data (adjust logos to your /public/img paths)
+// Select data (ensure the logos exist in /public/img)
 const networks = [
   { value: 'mtn',     label: 'MTN',     logo: '/img/mtn.png' },
   { value: 'airtel',  label: 'Airtel',  logo: '/img/airtel.png' },
@@ -20,25 +22,25 @@ const assets = [
   { code: 'NGN',  label: 'NGN',  balance: '0.00', logo: '/img/ngn.png'  },
 ]
 
-// State
-const network = ref('mtn')   // screenshot shows MTN selected
-const phone   = ref('+2347082137552') // shows +234 prefix and digits
+// Form state
+const network = ref('')      // start empty; shows placeholder until picked
+const phone   = ref('')
 const asset   = ref('BTC')
-const amount  = ref('2000')
+const amount  = ref('')
 
 const chips = [200, 500, 1000, 2000, 5000]
-const digits = (v) => (v || '').replace(/[^\d]/g, '')
+const onlyDigits = (v) => (v || '').replace(/[^\d]/g, '')
 const setChip = (n) => (amount.value = String(n))
 
 const valid = computed(() =>
-  network.value && asset.value && (phone.value?.length >= 7) && Number(amount.value) > 0
+  network.value && asset.value && phone.value?.length >= 7 && Number(amount.value) > 0
 )
 
 // Modal state
-const modalOpen = ref(false)
+const modalOpen  = ref(false)
 const modalPhase = ref('processing') // 'processing'|'success'|'error'
 const modalTitle = ref('')
-const modalMsg = ref('')
+const modalMsg   = ref('')
 const modalLines = ref([])
 
 function randomMsg(ok) {
@@ -47,6 +49,10 @@ function randomMsg(ok) {
   return ok ? okMsgs[Math.floor(Math.random()*okMsgs.length)]
             : errMsgs[Math.floor(Math.random()*errMsgs.length)]
 }
+
+// Save beneficiary
+const saveRecipient = ref(true)
+const { add } = useBeneficiaries()
 
 const submit = async () => {
   if (!valid.value) return
@@ -60,12 +66,25 @@ const submit = async () => {
     { label: 'Amount',  value: `₦${Number(amount.value).toLocaleString()}` },
     { label: 'Method',  value: asset.value },
   ]
-  // mock fetch
+
+  // mock network call
   await new Promise(r => setTimeout(r, 1200))
   const ok = Math.random() < 0.7
   modalPhase.value = ok ? 'success' : 'error'
-  modalTitle.value = ok ? 'Airtime purchased' : 'Payment failed'
-  modalMsg.value = randomMsg(ok)
+  modalTitle.value  = ok ? 'Airtime purchased' : 'Payment failed'
+  modalMsg.value    = randomMsg(ok)
+
+  if (ok && saveRecipient.value) {
+    const net = networks.find(n => n.value === network.value)
+    const label = `${net ? net.label : network.value} • ${phone.value.slice(0,7)}…`
+    add({
+      service: 'airtime',
+      kind: 'phone',
+      providerId: network.value,
+      label,
+      value: phone.value,
+    })
+  }
 }
 
 const closeModal = () => (modalOpen.value = false)
@@ -77,9 +96,9 @@ const retry = () => {
   setTimeout(() => {
     const ok = Math.random() < 0.7
     modalPhase.value = ok ? 'success' : 'error'
-    modalTitle.value = ok ? 'Airtime purchased' : 'Payment failed'
-    modalMsg.value = randomMsg(ok)
-  }, 1000)
+    modalTitle.value  = ok ? 'Airtime purchased' : 'Payment failed'
+    modalMsg.value    = randomMsg(ok)
+  }, 900)
 }
 </script>
 
@@ -90,25 +109,21 @@ const retry = () => {
     <!-- 1) Network -->
     <BrandSelect v-model="network" :options="networks" placeholder="Select Network" />
 
-    <!-- 2) Phone (flag + prefix + number) -->
-    <div class="mt-4 rounded-2xl bg-gray-50 border border-gray-200 px-3 py-2 flex items-center gap-3">
-      <!-- Flag pill -->
-      <button type="button" class="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/60 border border-gray-200">
-        <span class="text-lg">🇳🇬</span>
-        <ChevronDown class="w-4 h-4 text-gray-500" />
-      </button>
-      <!-- Number with visible +234 prefix (kept inside the value per screenshot) -->
-      <input
-        :value="phone"
-        @input="e => phone = e.target.value.replace(/[^\\d+]/g,'')"
-        type="tel"
-        inputmode="numeric"
-        placeholder="+234XXXXXXXXXX"
-        class="flex-1 bg-transparent px-2 py-3 placeholder-gray-400 text-gray-900 border-none ring-0 focus:ring-0 focus:border-0 focus:outline-none outline-none"
+    <!-- 2) Phone with beneficiaries -->
+    <div class="mt-4">
+      <PhoneInputWithBeneficiaries
+        v-model="phone"
+        service="airtime"
+        :providerId="network"
+        placeholder="Enter Phone Number"
       />
+      <label class="mt-2 inline-flex items-center gap-2 text-sm text-gray-600">
+        <input type="checkbox" v-model="saveRecipient" class="rounded border-gray-300 text-primary focus:ring-primary" />
+        Save recipient
+      </label>
     </div>
 
-    <!-- 3) Asset / Wallet -->
+    <!-- 3) Asset -->
     <div class="mt-4">
       <AssetSelect v-model="asset" :options="assets" placeholder="BTC" />
     </div>
@@ -117,7 +132,7 @@ const retry = () => {
     <div class="mt-4 rounded-2xl bg-gray-50 border border-gray-200 px-4 py-4">
       <input
         :value="amount"
-        @input="e => amount = digits(e.target.value)"
+        @input="e => amount = onlyDigits(e.target.value)"
         type="text"
         inputmode="numeric"
         placeholder="Enter Amount"
@@ -138,7 +153,7 @@ const retry = () => {
     </div>
 
     <!-- CTA -->
-    <Button class="w-full mt-6" @click="submit" :disabled="!valid">
+    <Button class="w-full mt-6" :disabled="!valid" @click="submit">
       Purchase Airtime
     </Button>
 

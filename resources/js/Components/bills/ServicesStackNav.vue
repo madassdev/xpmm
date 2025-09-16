@@ -2,14 +2,11 @@
 import * as Lucide from 'lucide-vue-next'
 
 const props = defineProps({
-  /** which tile is active */
   active: { type: String, default: 'airtime' },
-  /** allow clicking to switch (for future use) */
   clickable: { type: Boolean, default: true },
 })
 const emit = defineEmits(['select'])
 
-/** order and icons match the design */
 const items = [
   { key: 'airtime',     label: 'Airtime',        icon: 'Phone' },
   { key: 'data',        label: 'Mobile Data',    icon: 'Wifi' },
@@ -18,16 +15,6 @@ const items = [
   { key: 'tv',          label: 'Tv Bills',       icon: 'Tv' },
   { key: 'betting',     label: 'Betting Top-up', icon: 'BadgeDollarSign' },
 ]
-
-/** per-service active accent; tweak to your token if desired */
-const activeClasses = (key) => ({
-  airtime:     'bg-teal-100 text-teal-700 ring-1 ring-teal-200',
-  data:        'bg-sky-100 text-sky-700 ring-1 ring-sky-200',
-  internet:    'bg-amber-100 text-amber-700 ring-1 ring-amber-200',
-  electricity: 'bg-purple-100 text-purple-700 ring-1 ring-purple-200',
-  tv:          'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200',
-  betting:     'bg-pink-100 text-pink-700 ring-1 ring-pink-200',
-}[key] ?? 'bg-primary/10 text-primary ring-1 ring-primary/20')
 </script>
 
 <template>
@@ -38,9 +25,15 @@ const activeClasses = (key) => ({
       type="button"
       class="w-full rounded-2xl border px-4 py-4 flex items-center gap-3 select-none transition-colors"
       :class="[
-        it.key === active
-          ? activeClasses(it.key) + ' border-transparent'
-          : 'bg-white text-gray-400 border-gray-200 hover:bg-gray-50 hover:text-gray-700 hover:border-gray-300 cursor-pointer'
+        it.key !== active && 'bg-white text-gray-400 border-gray-200 hover:bg-gray-50 hover:text-gray-700 hover:border-gray-300 cursor-pointer',
+        {
+          'bg-teal-100 text-teal-700 ring-1 ring-teal-200 border-transparent': it.key === 'airtime'     && it.key === active,
+          'bg-sky-100 text-sky-700 ring-1 ring-sky-200 border-transparent':   it.key === 'data'        && it.key === active,
+          'bg-amber-100 text-amber-700 ring-1 ring-amber-200 border-transparent': it.key === 'internet'    && it.key === active,
+          'bg-purple-100 text-purple-700 ring-1 ring-purple-200 border-transparent': it.key === 'electricity' && it.key === active,
+          'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200 border-transparent': it.key === 'tv'          && it.key === active,
+          'bg-pink-100 text-pink-700 ring-1 ring-pink-200 border-transparent':      it.key === 'betting'     && it.key === active,
+        },
       ]"
       @click="clickable && emit('select', it.key)"
       :aria-current="it.key === active ? 'page' : undefined"
