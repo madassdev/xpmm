@@ -7,6 +7,10 @@ import ServicesStackNav from '@/Components/bills/ServicesStackNav.vue'
 // Forms
 import AirtimeForm from '@/Components/bills/AirtimeForm.vue'
 import MobileDataForm from '@/Components/bills/MobileDataForm.vue'
+import ElectricityForm from '@/Components/bills/ElectricityForm.vue'
+import TvBillsForm from '@/Components/bills/TvBillsForm.vue'
+import InternetForm from '@/Components/bills/InternetForm.vue'  
+import BettingTopupForm from '@/Components/bills/BettingTopupForm.vue'
 
 // Simple placeholder component for not-yet-built pages
 const ComingSoon = {
@@ -25,13 +29,14 @@ const active = ref('airtime')
 const componentMap = {
   airtime: AirtimeForm,
   data: MobileDataForm,
-  internet: ComingSoon,
-  electricity: ComingSoon,
-  tv: ComingSoon,
-  betting: ComingSoon,
+  electricity: ElectricityForm, 
+  internet: InternetForm,
+  tv: TvBillsForm,
+  betting: BettingTopupForm,
 }
 
 const currentComponent = computed(() => componentMap[active.value] || ComingSoon)
+console.log(currentComponent.value)
 const currentLabel = computed(() => ({
   airtime: 'Airtime',
   data: 'Mobile Data',

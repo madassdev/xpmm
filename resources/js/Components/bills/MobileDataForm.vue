@@ -9,6 +9,7 @@ import DataBundleSelect from '@/Components/bills/DataBundleSelect.vue'
 import BillsPayModal from '@/Components/bills/shared/BillsPayModal.vue'
 import PhoneInputWithBeneficiaries from '@/Components/bills/shared/PhoneInputWithBeneficiaries.vue'
 import { useBeneficiaries } from '@/composables/useBeneficiaries'
+import AssetSelect from './AssetSelect.vue'
 
 // Providers (ensure logos exist)
 const networks = [
@@ -23,6 +24,12 @@ const wallets = [
   { value: 'main', label: 'Main Wallet' },
   { value: 'btc',  label: 'BTC Wallet'  },
   { value: 'usdt', label: 'USDT Wallet' },
+]
+
+const assets = [
+  { code: 'BTC',  label: 'BTC',  balance: '0.00', logo: '/img/btc.png'  },
+  { code: 'USDT', label: 'USDT', balance: '0.00', logo: '/img/usdt.png' },
+  { code: 'NGN',  label: 'NGN',  balance: '0.00', logo: '/img/ngn.png'  },
 ]
 
 // Mock fetch plans (replace when API is ready)
@@ -43,6 +50,8 @@ const wallet   = ref('')
 const bundleId = ref('')
 const plans    = ref([])
 const loadingPlans = ref(false)
+const asset   = ref('BTC')
+
 
 // Load plans when provider changes
 watchEffect(async () => {
@@ -149,7 +158,7 @@ const retry = () => {
 
     <!-- 3) Wallet -->
     <div class="mt-4">
-      <SoftSelect v-model="wallet" :options="wallets" placeholder="Select Wallet" />
+      <AssetSelect v-model="asset" :options="assets" placeholder="BTC" />
     </div>
 
     <!-- 4) Bundle -->
