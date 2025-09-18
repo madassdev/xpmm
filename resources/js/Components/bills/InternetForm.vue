@@ -204,6 +204,7 @@ const retry = () => {
       :message="modalMsg"
       :details="modalLines"
       @close="closeModal"
+      @submit="onSubmitPin"
       @primary="closeModal"
       @secondary="retry"
     />
