@@ -22,3 +22,11 @@ export async function post(url, data, opts = {}) {
     headers: { ...(opts.headers || {}), 'Idempotency-Key': idem },
   })
 }
+export async function get(url, data, opts = {}) {
+  await ensureSanctum()
+  const idem = opts.headers?.['Idempotency-Key'] ?? crypto.randomUUID()
+  return api.get(url, data, {
+    ...opts,
+    headers: { ...(opts.headers || {}), 'Idempotency-Key': idem },
+  })
+}

@@ -1,15 +1,15 @@
 <script setup>
-import { ref, computed, watchEffect } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { get, post } from '@/lib/api' // get is used here; keep post if you'll call backend to pay
 import Card from '@/Components/ui/Card.vue'
 import Button from '@/Components/ui/Button.vue'
 
 import BrandSelect from '@/Components/bills/BrandSelect.vue'
-import SoftSelect from '@/Components/bills/SoftSelect.vue'          // for "Select Wallet"
 import DataBundleSelect from '@/Components/bills/DataBundleSelect.vue'
 import BillsPayModal from '@/Components/bills/shared/BillsPayModal.vue'
 import PhoneInputWithBeneficiaries from '@/Components/bills/shared/PhoneInputWithBeneficiaries.vue'
 import { useBeneficiaries } from '@/composables/useBeneficiaries'
-import AssetSelect from './AssetSelect.vue'
+import AssetSelect from '@/Components/bills/AssetSelect.vue'
 
 // Providers (ensure logos exist)
 const networks = [
@@ -19,64 +19,88 @@ const networks = [
   { value: '9mobile', label: '9mobile', logo: '/img/9mobile.png' },
 ]
 
-// Wallet / Asset options (simple)
-const wallets = [
-  { value: 'main', label: 'Main Wallet' },
-  { value: 'btc',  label: 'BTC Wallet'  },
-  { value: 'usdt', label: 'USDT Wallet' },
-]
-
+// Assets (payment method)
 const assets = [
   { code: 'BTC',  label: 'BTC',  balance: '0.00', logo: '/img/btc.png'  },
   { code: 'USDT', label: 'USDT', balance: '0.00', logo: '/img/usdt.png' },
   { code: 'NGN',  label: 'NGN',  balance: '0.00', logo: '/img/ngn.png'  },
 ]
 
-// Mock fetch plans (replace when API is ready)
-async function fetchPlans(provider) {
-  await new Promise(r => setTimeout(r, 400))
-  return [
-    { id: 'p1', name: '120mb - 20 days',      price: 150 },
-    { id: 'p2', name: '12.5gb - 30 days',     price: 150 },
-    { id: 'p3', name: '30gb - 30 days',       price: 9000 },
-    { id: 'p4', name: '1.5TB mb - 365 days',  price: 225000 },
-  ]
+// --- API fetch for plans ---
+const plans = ref([])
+const loadingPlans = ref(false)
+const plansError = ref('')
+const plansCache = ref({}) // { [provider]: Plan[] }
+
+async function fetchPlansFromApi(provider) {
+  // Change the URL to match your backend route if different
+  const { data } = await get('/bills/data/plans', { params: { network:provider } })
+  console.log(data)
+  // Normalize shape: accept {data:[...]} or [...]
+  const raw = Array.isArray(data?.plans) ? data.plans : Array.isArray(data) ? data : []
+  return raw.map(p => ({
+    id:     p.id ?? p.code ?? String(p.plan_id ?? p.slug ?? Math.random()),
+    name:   p.name ?? p.plan_name ?? p.title ?? 'Plan',
+    price:  Number(p.price ?? p.amount ?? 0),
+  }))
 }
 
-// Form state
-const provider = ref('') // start unselected
-const phone    = ref('')
-const wallet   = ref('')
-const bundleId = ref('')
-const plans    = ref([])
-const loadingPlans = ref(false)
-const asset   = ref('BTC')
-
-
-// Load plans when provider changes
-watchEffect(async () => {
-  if (!provider.value) { plans.value = []; return }
+async function loadPlans(provider) {
+  plansError.value = ''
+  if (!provider) { plans.value = []; return }
+  // cache
+  if (plansCache.value[provider]) {
+    plans.value = plansCache.value[provider]
+    return
+  }
   loadingPlans.value = true
-  plans.value = await fetchPlans(provider.value)
-  loadingPlans.value = false
+  try {
+    const list = await fetchPlansFromApi(provider)
+    console.log(list)
+    plansCache.value[provider] = list
+    plans.value = list
+  } catch (e) {
+    plansError.value = 'Failed to load plans. Please try another network or retry.'
+    plans.value = []
+  } finally {
+    loadingPlans.value = false
+  }
+}
+
+// --- Form state ---
+const provider = ref('') // default empty; we’ll set on mount
+const phone = ref('')
+const asset = ref('BTC')
+const bundleId = ref('')
+const valid = computed(() =>
+  provider.value && asset.value && phone.value?.length >= 7 && bundleId.value
+)
+// Load on mount + on provider change
+onMounted(async () => {
+  if (!provider.value && networks.length) provider.value = networks[0].value
+  await loadPlans(provider.value)
+})
+watch(provider, async (nv, ov) => {
+  bundleId.value = ''
+  await loadPlans(nv)
 })
 
 const canSubmit = computed(() =>
-  provider.value && phone.value.length >= 7 && wallet.value && bundleId.value
+  provider.value && phone.value.length >= 7 && asset.value && bundleId.value
 )
 
-// Modal state
-const modalOpen  = ref(false)
+const modalOpen = ref(false)
 const modalPhase = ref('processing') // 'processing'|'success'|'error'
 const modalTitle = ref('')
-const modalMsg   = ref('')
+const modalMsg = ref('')
 const modalLines = ref([])
+const modalErrorCode = ref('')
 
 function randomMsg(ok) {
-  const okMsgs  = ['Data purchase completed.', 'Plan delivered successfully.', 'Beneficiary has been credited.']
+  const okMsgs = ['Data purchase completed.', 'Plan delivered successfully.', 'Beneficiary has been credited.']
   const errMsgs = ['We could not complete this payment.', 'Provider timeout — please retry.', 'Insufficient balance on wallet.']
-  return ok ? okMsgs[Math.floor(Math.random()*okMsgs.length)]
-            : errMsgs[Math.floor(Math.random()*errMsgs.length)]
+  return ok ? okMsgs[Math.floor(Math.random() * okMsgs.length)]
+            : errMsgs[Math.floor(Math.random() * errMsgs.length)]
 }
 
 // Save beneficiary
@@ -84,52 +108,71 @@ const saveRecipient = ref(true)
 const { add } = useBeneficiaries()
 
 const submit = async () => {
-  if (!canSubmit.value) return
+  if (!valid.value) return
   const plan = plans.value.find(p => p.id === bundleId.value)
+
   modalOpen.value = true
-  modalPhase.value = 'processing'
+  modalPhase.value = 'confirm'
   modalTitle.value = ''
   modalMsg.value = ''
   modalLines.value = [
-    { label: 'Network', value: networks.find(n=>n.value===provider.value)?.label || provider.value },
+    { label: 'Network', value: networks.find(n => n.value === provider.value)?.label || provider.value },
     { label: 'Phone',   value: phone.value },
     { label: 'Bundle',  value: plan?.name || '' },
     { label: 'Amount',  value: '₦' + (plan?.price ?? 0).toLocaleString() },
-    { label: 'Wallet',  value: wallets.find(w=>w.value===wallet.value)?.label || wallet.value },
+    { label: 'Method',  value: asset.value }, // changed from "Wallet" to "Method"
   ]
+}
 
-  // mock API
-  await new Promise(r => setTimeout(r, 1200))
-  const ok = Math.random() < 0.7
-  modalPhase.value = ok ? 'success' : 'error'
-  modalTitle.value  = ok ? 'Data purchased' : 'Payment failed'
-  modalMsg.value    = randomMsg(ok)
+const onSubmitPin = async (pin) => {
+  modalErrorCode.value = ''
+  modalMsg.value = ''
+  modalTitle.value = ''
+  try {
+    const payload = {
+      provider: provider.value,
+      phone: phone.value,
+      planId: bundleId.value,
+      asset: asset.value,
+      pin,
+    }
 
-  if (ok && saveRecipient.value) {
-    const net = networks.find(n => n.value === provider.value)
-    const label = `${net ? net.label : provider.value} • ${phone.value.slice(0,7)}…`
-    add({
-      service: 'data',
-      kind: 'phone',
-      providerId: provider.value,
-      label,
-      value: phone.value,
-    })
+    const { data } = await post('/bills/data', payload)
+
+    modalPhase.value = 'success'
+    modalTitle.value = 'Data purchased'
+    modalMsg.value = data?.message || 'Your data has been delivered.'
+
+    if (saveRecipient.value) {
+      const net = networks.find(n => n.value === network.value)
+      const label = `${net ? net.label : network.value} • ${phone.value.slice(0, 7)}…`
+      add({ service: 'airtime', kind: 'phone', providerId: network.value, label, value: phone.value })
+    }
+  } catch (err) {
+    const msg = err?.response?.data?.message || 'Payment failed.'
+    modalMsg.value = msg
+
+    // If backend rejected the PIN, mark the error:
+    if (msg.toLowerCase().includes('pin')) {
+      modalErrorCode.value = 'invalid_pin'
+    } else {
+      modalErrorCode.value = ''
+    }
+
+    // Show error (modal will bounce back to PIN if invalid_pin)
+    modalPhase.value = 'error'
   }
+
+
+  return;
 }
 
 const closeModal = () => (modalOpen.value = false)
 const retry = () => {
   modalOpen.value = true
-  modalPhase.value = 'processing'
+  modalPhase.value = 'confirm'
   modalTitle.value = ''
   modalMsg.value = ''
-  setTimeout(() => {
-    const ok = Math.random() < 0.7
-    modalPhase.value = ok ? 'success' : 'error'
-    modalTitle.value  = ok ? 'Data purchased' : 'Payment failed'
-    modalMsg.value    = randomMsg(ok)
-  }, 900)
 }
 </script>
 
@@ -156,31 +199,39 @@ const retry = () => {
       </label>
     </div>
 
-    <!-- 3) Wallet -->
+    <!-- 3) Asset / Method -->
     <div class="mt-4">
       <AssetSelect v-model="asset" :options="assets" placeholder="BTC" />
     </div>
 
     <!-- 4) Bundle -->
     <div class="mt-4">
-      <DataBundleSelect v-model="bundleId" :options="plans" placeholder="Select Bundle" />
+      <DataBundleSelect
+        v-model="bundleId"
+        :options="plans"
+        :placeholder="loadingPlans ? 'Loading plans…' : (plansError ? 'Failed to load' : 'Select Bundle')"
+        :disabled="loadingPlans || !!plansError"
+      />
+      <p v-if="plansError" class="mt-2 text-xs text-red-600">{{ plansError }}</p>
     </div>
 
     <!-- CTA -->
-    <Button class="w-full mt-6" :disabled="!canSubmit" @click="submit">
+    <Button class="w-full mt-6" :disabled="!canSubmit || loadingPlans" @click="submit">
       Purchase Data
     </Button>
 
     <!-- Modal -->
     <BillsPayModal
-      :open="modalOpen"
-      :phase="modalPhase"
+      :open="modalOpen" 
+      :phase="modalPhase" 
+      :errorCode="modalErrorCode" 
       :title="modalTitle"
-      :message="modalMsg"
-      :details="modalLines"
-      @close="closeModal"
+      :message="modalMsg" 
+      :details="modalLines" 
+      @submit="onSubmitPin" 
+      @close="closeModal" 
       @primary="closeModal"
-      @secondary="retry"
+      @secondary="retry" 
     />
   </Card>
 </template>

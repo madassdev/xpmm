@@ -44,6 +44,7 @@ const modalPhase = ref('processing') // 'processing'|'success'|'error'
 const modalTitle = ref('')
 const modalMsg = ref('')
 const modalLines = ref([])
+const modalErrorCode = ref('')
 
 function randomMsg(ok) {
   const okMsgs = ['Your airtime has been delivered.', 'Purchase completed successfully.', 'We’ve credited the recipient’s number.']
@@ -71,8 +72,9 @@ const submit = async () => {
 }
 
 const onSubmitPin = async (pin) => {
-  modalPhase.value = 'processing'
-
+  modalErrorCode.value = ''
+  modalMsg.value = ''
+  modalTitle.value = ''
   try {
     const payload = {
       network: network.value,
@@ -95,15 +97,18 @@ const onSubmitPin = async (pin) => {
       add({ service: 'airtime', kind: 'phone', providerId: network.value, label, value: phone.value })
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      (err?.response?.status === 422
-        ? Object.values(err.response.data.errors || {}).flat().join(', ')
-        : 'We could not complete this payment right now.')
-
-    modalPhase.value = 'error'
-    modalTitle.value = 'Payment failed'
+    const msg = err?.response?.data?.message || 'Payment failed.'
     modalMsg.value = msg
+
+    // If backend rejected the PIN, mark the error:
+    if (msg.toLowerCase().includes('pin')) {
+      modalErrorCode.value = 'invalid_pin'
+    } else {
+      modalErrorCode.value = ''
+    }
+
+    // Show error (modal will bounce back to PIN if invalid_pin)
+    modalPhase.value = 'error'
   }
 
 
@@ -191,7 +196,17 @@ const retry = () => {
     </Button>
 
     <!-- Modal -->
-    <BillsPayModal :open="modalOpen" :phase="modalPhase" :title="modalTitle" :message="modalMsg" :details="modalLines"
-      @submit="onSubmitPin" @close="closeModal" @primary="closeModal" @secondary="retry" />
+    <BillsPayModal 
+      :open="modalOpen" 
+      :phase="modalPhase" 
+      :errorCode="modalErrorCode" 
+      :title="modalTitle"
+      :message="modalMsg" 
+      :details="modalLines" 
+      @submit="onSubmitPin" 
+      @close="closeModal" 
+      @primary="closeModal"
+      @secondary="retry" 
+    />
   </Card>
 </template>
