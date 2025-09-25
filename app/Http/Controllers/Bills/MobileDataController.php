@@ -3,10 +3,13 @@
 namespace App\Http\Controllers\Bills;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\AirtimePurchaseRequest;
+use App\Http\Requests\DataPurchaseRequest;
 use App\Services\Redbiller\BillsService;
 use App\Support\NetworkMap;
 use App\Models\BillTransaction;
+use Exception;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Hash;
 
@@ -14,27 +17,47 @@ class MobileDataController extends Controller
 {
     public function __construct(private BillsService $bills) {}
 
+    public function getPlans(Request $r)
+    {
+        $r->validate([
+            'network' => 'required|string|in:mtn,airtel,glo,9mobile',
+        ]);
+
+        $network = strtolower($r->query('network'));
+        $product = NetworkMap::toProduct($network); // e.g. "MTN"
+        try {
+            $plans = $this->bills->getDataPlansList($product);
+        } catch (Exception $err) {
+            return response()->json([
+                'ok' => false,
+                'message' => $err->getMessage(),
+            ], 422);
+        }
+
+        return response()->json([
+            'ok'        => true,
+            'network'   => $network,
+            'product'   => $product,
+            'plans'     => $plans,
+            'raw'       => ['count' => count($plans)], // small hint; not leaking the whole payload
+        ]);
+    }
     public function purchase(DataPurchaseRequest $r)
     {
         // 1) Validated FE payload
         $data = $r->validated();
-        // Example incoming:
-        // {
-        //   "network":"mtn","phone":"08136051712","amount":500,
-        //   "asset":"BTC","pin":"1111"
-        // }
-
-        // 2) Transform to Redbiller structure (DO NOT include asset/pin)
-        $product = NetworkMap::toProduct($data['network']);
+        $code = $data['planId'];
+        $provider = NetworkMap::toProduct($data['provider']);
 
         $reference = $data['reference'] ?? Str::ulid()->toBase32();
 
         $redbillerPayload = [
-            'product'   => $product,
+            'product'   => $provider,
             'phone_no'  => $data['phone'],
-            'amount'    => (int) $data['amount'],
+            'code'    => $code,
             'reference' => $reference,
         ];
+
         if (array_key_exists('ported', $data)) {
             // Redbiller samples often show string "true"/"false"
             $redbillerPayload['ported'] = $data['ported'] ? 'true' : 'false';
@@ -43,15 +66,18 @@ class MobileDataController extends Controller
             $redbillerPayload['callback_url'] = $data['callback_url'];
         }
 
-        // 3) Persist local intent first (for audit & idempotency)
-        //    Store asset choice & a hashed pin in meta. Never store raw PIN.
+        $plan = $this->bills->getPlanByCode($provider, $code);
+        $bundle = $plan['name'];
+        $amount = $plan['price'];
+        $product = "{$provider} - $bundle";
+        dd($product);
         $tx = BillTransaction::create([
             'reference'         => $reference,
-            'service'           => 'airtime',
+            'service'           => 'data',
             'product'           => $product,
-            'network'           => $data['network'],
+            'network'           => $data['provider'],
             'phone'             => $data['phone'],
-            'amount'            => (int) $data['amount'],
+            'amount'            => (int) $amount,
             'provider'          => 'redbiller',
             'status'            => BillTransaction::S_PENDING,
             'request_payload'   => $redbillerPayload, // what we’ll send out
@@ -62,7 +88,7 @@ class MobileDataController extends Controller
         ]);
 
         // 4) Call provider via BillsService (uses the redbiller payload)
-        $res = $this->bills->airtimePurchaseCreate([
+        $res = $this->bills->dataPurchaseCreate([
             // support both variants inside service; we pass canonical keys
             'product'      => $redbillerPayload['product'],
             'phone_no'     => $redbillerPayload['phone_no'],
@@ -70,6 +96,7 @@ class MobileDataController extends Controller
             'reference'    => $reference,
             'ported'       => $redbillerPayload['ported'] ?? null,
             'callback_url' => $redbillerPayload['callback_url'] ?? null,
+            'plan' => $bundle,
             // nothing else; asset/pin stay internal
         ]);
 

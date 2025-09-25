@@ -9,6 +9,7 @@ use App\Support\NetworkMap;
 use App\Models\BillTransaction;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\ValidationException;
 
 class AirtimeController extends Controller
 {
@@ -18,11 +19,10 @@ class AirtimeController extends Controller
     {
         // 1) Validated FE payload
         $data = $r->validated();
-        // Example incoming:
-        // {
-        //   "network":"mtn","phone":"08136051712","amount":500,
-        //   "asset":"BTC","pin":"1111"
-        // }
+        $user = $r->user();
+        if (! $user->pin || ! Hash::check($data['pin'], $user->pin)) {
+            throw ValidationException::withMessages(['pin' => 'Incorrect PIN.']);
+        }
 
         // 2) Transform to Redbiller structure (DO NOT include asset/pin)
         $product = NetworkMap::toProduct($data['network']);

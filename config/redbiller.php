@@ -52,13 +52,20 @@ return [
             'purchase_list'    => '/{v}/bills/data/plans/purchase/list',
             // NOTE: create endpoint exists in docs but was on another page;
             // wire it later when you confirm exact path (likely /{v}/bills/data/plans/purchase/create)
-            'purchase_create'  => null,
+            'purchase_create'  => '/{v}/bills/data/plans/purchase/create',
         ],
         'electricity' => [
             'validate'        => '/{v}/bills/electricity/validate',
             'purchase_create' => '/{v}/bills/electricity/purchase/create',
             'purchase_status' => '/{v}/bills/electricity/purchase/status',
             'purchase_list'   => '/{v}/bills/electricity/purchase/list',
+        ],
+        'cable' => [
+            'validate'        => '/{v}/bills/cable/validate',
+            'plans_list'       => '/{v}/bills/cable/plans/list',
+            'purchase_create' => '/{v}/bills/cable/plans/purchase/create',
+            'purchase_status' => '/{v}/bills/cable/purchase/status',
+            'purchase_list'   => '/{v}/bills/cable/purchase/list',
         ],
     ],
 ];
