@@ -20,7 +20,24 @@ class ElectricityController extends Controller
     public function purchase(ElectricityPurchaseRequest $r)
     {
         $res = $this->svc->purchase($r->validated());
-        return response()->json($res, $res['response']['ok'] ? 200 : 422);
+        $provider = $res['response'] ?? [];
+        $transaction = $res['transaction'] ?? [];
+
+        return response()->json([
+            'reference'      => $res['reference'],
+            'status'         => $transaction['status'] ?? null,
+            'customer_name'  => $transaction['customer_name'] ?? null,
+            'amount'         => $transaction['amount'] ?? null,
+            'amount_paid'    => $transaction['amount_paid'] ?? null,
+            'fee'            => $transaction['fee'] ?? null,
+            'cost'           => $transaction['cost'] ?? null,
+            'currency'       => $transaction['currency'] ?? null,
+            'tokens'         => $transaction['tokens'] ?? [],
+            'provider'       => [
+                'ok'     => $provider['ok'] ?? false,
+                'status' => $provider['status'] ?? null,
+            ],
+        ], ($provider['ok'] ?? false) ? 200 : 422);
     }
 
     public function status(string $reference)

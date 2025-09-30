@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Bills\AirtimeController;
 use App\Http\Controllers\Bills\MobileDataController;
+use App\Http\Controllers\Bills\ElectricityController;
 use App\Http\Controllers\BillsController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Settings\ProfileController;
@@ -52,6 +53,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/bills/airtime', [AirtimeController::class,'purchase']);
     Route::post('/bills/data', [MobileDataController::class,'purchase']);
     Route::get('/bills/data/plans', [MobileDataController::class, 'getPlans']); // ?network=mtn
+    Route::post('/bills/electricity/validate', [ElectricityController::class, 'validateCustomer']);
+    Route::post('/bills/electricity', [ElectricityController::class, 'purchase']);
+    Route::get('/bills/electricity/{reference}/status', [ElectricityController::class, 'status']);
 });
 
 require __DIR__.'/auth.php';
