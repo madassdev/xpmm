@@ -15,9 +15,9 @@ class BillTransaction extends Model
 
     protected $fillable = [
         'reference','service','product','network','phone','account','plan_id','ported',
-        'amount','amount_paid','amount_discount','provider','provider_txn_id',
-        'callback_url','status','paid_at','failed_at',
-        'request_payload','provider_response','webhook_payload',
+        'customer_name','amount','amount_paid','amount_discount','fee','cost','currency',
+        'provider','provider_txn_id','callback_url','status','paid_at','failed_at',
+        'request_payload','provider_response','webhook_payload','meta',
     ];
 
     protected $casts = [
@@ -25,11 +25,14 @@ class BillTransaction extends Model
         'amount'            => 'integer',
         'amount_paid'       => 'integer',
         'amount_discount'   => 'integer',
+        'fee'               => 'integer',
+        'cost'              => 'integer',
         'paid_at'           => 'datetime',
         'failed_at'         => 'datetime',
         'request_payload'   => 'array',
         'provider_response' => 'array',
         'webhook_payload'   => 'array',
+        'meta'              => 'array',
     ];
 
     public function electricityTokens() { return $this->hasMany(\App\Models\ElectricityToken::class); }

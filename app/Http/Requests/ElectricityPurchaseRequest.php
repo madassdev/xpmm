@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Support\ElectricityDiscoMap;
 use Illuminate\Foundation\Http\FormRequest;
 
 class ElectricityPurchaseRequest extends FormRequest
@@ -11,7 +12,21 @@ class ElectricityPurchaseRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return false;
+        return (bool) $this->user();
+    }
+
+    public function prepareForValidation(): void
+    {
+        $amount = preg_replace('/[^0-9]/', '', (string) $this->input('amount'));
+
+        $this->merge([
+            'disco'        => ElectricityDiscoMap::normalize((string) $this->input('disco')),
+            'meter_no'     => preg_replace('/\s+/', '', (string) $this->input('meter_no')),
+            'type'         => strtolower((string) $this->input('type')),
+            'amount'       => $amount !== '' ? (int) $amount : $amount,
+            'callback_url' => $this->input('callback_url') ? trim((string) $this->input('callback_url')) : null,
+            'reference'    => $this->input('reference') ? trim((string) $this->input('reference')) : null,
+        ]);
     }
 
     /**
