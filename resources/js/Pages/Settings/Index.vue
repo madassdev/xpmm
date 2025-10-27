@@ -8,6 +8,22 @@ import SettingsNav from '@/Components/settings/SettingsNav.vue'
 import ProfilePanel from '@/Components/settings/ProfilePanel.vue'
 import SecurityPanel from '@/Components/settings/SecurityPanel.vue'
 import SupportPanel from '@/Components/settings/SupportPanel.vue'
+import BankPanel from '@/Components/settings/BankPanel.vue'
+
+const pageProps = defineProps({
+  userMeta: {
+    type: Object,
+    default: () => ({}),
+  },
+  bankAccounts: {
+    type: Array,
+    default: () => [],
+  },
+  banks: {
+    type: Array,
+    default: () => [],
+  },
+})
 
 // Optional placeholder panels
 const SimplePanel = (label) => ({ template: `<div class="p-6 rounded-2xl border border-gray-200 bg-white text-gray-600">${label} — Coming soon</div>` })
@@ -24,8 +40,18 @@ const componentMap = {
   kyc:      KycPanel,
   upgrade:  UpgradePanel,
   support:  SupportPanel,
+  bank:     BankPanel,
 }
 const currentComponent = computed(() => componentMap[active.value] || ProfilePanel)
+const componentProps = computed(() => {
+  if (active.value === 'bank') {
+    return {
+      bankAccounts: pageProps.bankAccounts,
+      banks: pageProps.banks,
+    }
+  }
+  return {}
+})
 </script>
 
 <template>
@@ -41,7 +67,9 @@ const currentComponent = computed(() => componentMap[active.value] || ProfilePan
         </div>
 
         <div class="col-span-12 md:col-span-8 lg:col-span-8 xl:col-span-9">
-          <component :is="currentComponent" />
+          <KeepAlive>
+            <component :is="currentComponent" v-bind="componentProps" />
+          </KeepAlive>
         </div>
       </div>
     </div>

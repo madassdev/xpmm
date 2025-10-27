@@ -4,11 +4,14 @@ import Card from '@/Components/ui/Card.vue'
 import Button from '@/Components/ui/Button.vue'
 
 import BrandSelect from '@/Components/bills/BrandSelect.vue'
-import AssetSelect from '@/Components/bills/AssetSelect.vue'
 import DataBundleSelect from '@/Components/bills/DataBundleSelect.vue'
 import AccountInputWithBeneficiaries from '@/Components/bills/shared/AccountInputWithBeneficiaries.vue'
 import BillsPayModal from '@/Components/bills/shared/BillsPayModal.vue'
 import { useBeneficiaries } from '@/composables/useBeneficiaries'
+
+const props = defineProps({
+  balance: { type: Number, default: 0 },
+})
 
 // ISPs (add logos in /public/img; placeholders are fine)
 const providers = [
@@ -17,13 +20,6 @@ const providers = [
   { value: 'swift',      label: 'Swift',      logo: '/img/swift.png' },
   { value: 'ipnx',       label: 'ipNX',       logo: '/img/ipnx.png' },
   { value: 'fiberone',   label: 'FiberOne',   logo: '/img/fiberone.png' },
-]
-
-// Assets to pay with (same pattern as Airtime/Electricity)
-const assets = [
-  { code: 'BTC',  label: 'BTC',  balance: '0.00', logo: '/img/btc.png'  },
-  { code: 'USDT', label: 'USDT', balance: '0.00', logo: '/img/usdt.png' },
-  { code: 'NGN',  label: 'NGN',  balance: '0.00', logo: '/img/ngn.png'  },
 ]
 
 // Mock API: fetch plans by provider
@@ -66,7 +62,6 @@ async function fetchInternetPlans(provider) {
 // Form state
 const provider = ref('')      // selected ISP
 const account  = ref('')      // account/customer/router id (alphanumeric)
-const asset    = ref('BTC')   // payment asset
 const bundleId = ref('')      // selected plan
 
 const plans = ref([])
@@ -81,10 +76,23 @@ watchEffect(async () => {
 })
 
 const selectedPlan = computed(() => plans.value.find(p => p.id === bundleId.value) || null)
+const fiatBalance = computed(() => Number.isFinite(props.balance) ? Number(props.balance) : 0)
+const planPrice = computed(() => Number(selectedPlan.value?.price || 0))
+const insufficient = computed(() => planPrice.value > fiatBalance.value)
 
 const canSubmit = computed(() =>
-  provider.value && account.value.length >= 4 && asset.value && bundleId.value
+  provider.value && account.value.length >= 4 && bundleId.value && !insufficient.value
 )
+
+const balanceHint = computed(() => {
+  if (!bundleId.value) {
+    return `Available balance: ₦${fiatBalance.value.toLocaleString()}`
+  }
+  if (insufficient.value) {
+    return `Insufficient funds. Available balance: ₦${fiatBalance.value.toLocaleString()}`
+  }
+  return 'Fiat balance will be used for this payment.'
+})
 
 // Modal state
 const modalOpen  = ref(false)
@@ -95,7 +103,7 @@ const modalLines = ref([])
 
 function randomMsg(ok) {
   const okMsgs  = ['Internet plan activated.', 'Subscription completed successfully.', 'Account credited with selected plan.']
-  const errMsgs = ['Payment could not be completed.', 'Provider timeout — please retry.', 'Insufficient balance on selected asset.']
+  const errMsgs = ['Payment could not be completed.', 'Provider timeout — please retry.', 'Insufficient fiat balance.']
   return ok ? okMsgs[Math.floor(Math.random()*okMsgs.length)]
             : errMsgs[Math.floor(Math.random()*errMsgs.length)]
 }
@@ -106,6 +114,7 @@ const { add } = useBeneficiaries()
 
 const submit = async () => {
   if (!canSubmit.value) return
+  if (insufficient.value) return
   const provLabel = providers.find(p => p.value === provider.value)?.label || provider.value
 
   modalOpen.value = true
@@ -117,7 +126,7 @@ const submit = async () => {
     { label: 'Account ID',value: account.value },
     { label: 'Plan',      value: selectedPlan.value?.name || '' },
     { label: 'Amount',    value: '₦' + Number(selectedPlan.value?.price || 0).toLocaleString() },
-    { label: 'Method',    value: asset.value },
+    { label: 'Payment Source',    value: 'Fiat Balance (NGN)' },
   ]
 
   // mock API call
@@ -177,9 +186,13 @@ const retry = () => {
       </label>
     </div>
 
-    <!-- Asset -->
-    <div class="mt-4">
-      <AssetSelect v-model="asset" :options="assets" placeholder="BTC" />
+    <!-- Fiat balance -->
+    <div class="mt-4 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-4">
+      <div class="text-xs uppercase tracking-wide text-primary/80">Available Balance</div>
+      <div class="mt-1 text-lg font-semibold text-primary">₦{{ fiatBalance.toLocaleString() }}</div>
+      <p class="mt-1 text-xs text-primary/70">
+        Internet subscriptions draw from your fiat wallet.
+      </p>
     </div>
 
     <!-- Plan -->
@@ -189,6 +202,9 @@ const retry = () => {
         :options="plans"
         :placeholder="loadingPlans ? 'Loading plans…' : 'Select Plan'"
       />
+      <p class="mt-2 text-xs" :class="insufficient ? 'text-red-600' : 'text-gray-500'">
+        {{ balanceHint }}
+      </p>
     </div>
 
     <!-- CTA -->

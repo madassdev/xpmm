@@ -24,7 +24,7 @@ class AirtimeController extends Controller
             throw ValidationException::withMessages(['pin' => 'Incorrect PIN.']);
         }
 
-        // 2) Transform to Redbiller structure (DO NOT include asset/pin)
+        // 2) Transform to Redbiller structure (DO NOT include payment source/pin)
         $product = NetworkMap::toProduct($data['network']);
 
         $reference = $data['reference'] ?? Str::ulid()->toBase32();
@@ -44,7 +44,7 @@ class AirtimeController extends Controller
         }
 
         // 3) Persist local intent first (for audit & idempotency)
-        //    Store asset choice & a hashed pin in meta. Never store raw PIN.
+        //    Store payment source & a hashed pin in meta. Never store raw PIN.
         $tx = BillTransaction::create([
             'reference'         => $reference,
             'service'           => 'airtime',
@@ -56,7 +56,7 @@ class AirtimeController extends Controller
             'status'            => BillTransaction::S_PENDING,
             'request_payload'   => $redbillerPayload, // what we’ll send out
             'meta'              => [
-                'asset' => $data['asset'] ?? 'NGN',
+                'payment_source' => 'fiat_balance',
                 'pin_hash' => Hash::make($data['pin']), // never log or return
             ],
         ]);
@@ -70,7 +70,7 @@ class AirtimeController extends Controller
             'reference'    => $reference,
             'ported'       => $redbillerPayload['ported'] ?? null,
             'callback_url' => $redbillerPayload['callback_url'] ?? null,
-            // nothing else; asset/pin stay internal
+            // nothing else; payment source and pin stay internal
         ]);
 
         // 5) Update local txn from provider response

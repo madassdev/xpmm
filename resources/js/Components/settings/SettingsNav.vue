@@ -9,6 +9,7 @@ const emit = defineEmits(['select'])
 const items = [
     { key: 'profile', label: 'Profile', icon: 'User' },
     { key: 'account', label: 'My Account', icon: 'Users' },
+    { key: 'bank', label: 'Bank accounts', icon: 'Banknote' },
     { key: 'security', label: 'Security', icon: 'Shield' },
     { key: 'kyc', label: 'Identity Verification', icon: 'ScanFace' },
     { key: 'upgrade', label: 'Upgrade', icon: 'Rocket' },

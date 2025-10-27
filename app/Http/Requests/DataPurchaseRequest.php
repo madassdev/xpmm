@@ -11,7 +11,6 @@ class DataPurchaseRequest extends FormRequest
         return [
             'provider' => 'required|string|in:mtn,airtel,glo,9mobile',
             'phone'   => ['required','string','min:10','max:20','regex:/^[0-9+]+$/'],
-            'asset'   => 'nullable|string|in:NGN,BTC,USDT,USDC', // adjust to your wallet options
             'pin'     => ['required','string','regex:/^[0-9]{4,6}$/'], // 4–6 digits
             'planId'     => ['required','string','regex:/^[0-9]{4,6}$/'], // 4–6 digits
             // optional passthroughs if you ever add them on FE

@@ -1,13 +1,13 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { Link } from '@inertiajs/vue3'
 import TopNav from '@/Components/layout/TopNav.vue'
 import SidebarNav from '@/Components/layout/SidebarNav.vue'
+import { getDashboardNavSections } from '@/constants/dashboardNav'
 
 /**
  * Props:
  * - title: page title shown in TopNav
- * - navSections: grouped nav items (see defaultNav below for shape)
+ * - navSections: grouped nav items (see getDashboardNavSections for shape)
  * - activeKey: key of the active nav item (used by SidebarNav)
  * - user: { name, avatar } for the TopNav
  */
@@ -18,30 +18,7 @@ const props = defineProps({
   user: { type: Object, default: () => ({ name: 'Welcome', avatar: '' }) },
 })
 
-// Default nav (used if parent doesn’t pass one)
-const defaultNav = [
-  {
-    label: 'General',
-    items: [
-      { key: 'overview',  label: 'Overview',   href: route?.('dashboard') ?? '#', icon: 'LayoutDashboard' },
-      { key: 'giftcards', label: 'Giftcards',  href: '#', icon: 'Gift' },
-      { key: 'wallets',   label: 'Wallets',    href: '#', icon: 'Wallet' },
-      { key: 'cards',     label: 'Cards',      href: '#', icon: 'CreditCard' },
-      { key: 'referrals', label: 'Referrals',  href: '#', icon: 'Users' },
-      { key: 'txns',      label: 'Transactions', href: '#', icon: 'ReceiptText' },
-    ],
-  },
-  {
-    label: 'Utilities',
-    items: [
-      { key: 'bills',   label: 'Bills',    href: route?.('bills.index') ?? '#', icon: 'Receipt' },
-      { key: 'transfer',label: 'Transfer', href: '#', icon: 'Send' },
-      { key: 'bet',     label: 'Bet Top-up', href: '#', icon: 'TicketPercent' },
-    ],
-  },
-]
-
-const sections = computed(() => props.navSections.length ? props.navSections : defaultNav)
+const sections = computed(() => (props.navSections.length ? props.navSections : getDashboardNavSections()))
 
 const mobileOpen = ref(false)
 const toggleSidebar = () => (mobileOpen.value = !mobileOpen.value)

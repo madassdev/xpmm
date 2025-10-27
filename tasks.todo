@@ -1,8 +1,38 @@
 Bills payment: Airtime, Data, TV, Betting and Electricity
 Buying and selling of giftcards
-Buying and selling & Swapping of crypto
+Buying and selling of crypto
 Issuing of virtual cards
+
 Fix getPlanByCode
 Fix Electricity beneficiary and order
 Fix TV Bills beneficiary and order
 Fix betting flow
+
+
+This is what we want to achieve
+1. Users have a wallet on this app, they can fund their wallet via an external
+virtual account provider (palmpay or paystack), but for now, we only want to 
+mock that part, so there should be a section in the admin to manually fund a user.
+
+2. Users can make bills payment like airtime, data, electricity etc using their balance. 
+For now, we have an API from Redbiller that allows us to pay 
+these bills.
+
+3. There's a crypto deposit feature, where we will generate wallet for user but keep the
+private keys. These wallets mustbe unique per user per network (eth, trc, bep and bitcoin for now), 
+We have to track these wallets such that when users deposit on the blockchain, our app is aware, 
+and then users can see their balance per crypro asset. This crypto balance can now be 
+sold/converted into their fiat balance (using rates we specify on the admin). Withdrawals can also
+be made to external wallet (if user has crypto balance of the asset)
+
+Right now, some wrong things exist in the application like
+1. Unnecessary models, migrations and integrations 
+( Account, Balance, Entry, IncomingPayment, Journal, VirtualAccount).. 
+I don't know what these are meant for, let's take them out, leaving only redbiller for bills payment
+
+2. Cancel asset select, we only pay with fiat balance, so you can show user balance, and also 
+mayebe display an "Insufficient fund" when user is trying to proceed with amount less than balance, 
+
+3. Also remove payment method from giftcard interface, all payments are on the user's fiat balance.
+
+

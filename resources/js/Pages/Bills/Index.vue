@@ -12,6 +12,10 @@ import TvBillsForm from '@/Components/bills/TvBillsForm.vue'
 import InternetForm from '@/Components/bills/InternetForm.vue'  
 import BettingTopupForm from '@/Components/bills/BettingTopupForm.vue'
 
+const pageProps = defineProps({
+  fiatBalance: { type: Number, default: 0 },
+})
+
 // Simple placeholder component for not-yet-built pages
 const ComingSoon = {
   props: { label: { type: String, default: 'Coming soon' } },
@@ -51,7 +55,7 @@ const currentLabel = computed(() => ({
   <AppLayout :title="currentLabel" :navSections="[]" activeKey="bills" :user="{ name: 'Welcome, Muztirs', avatar: '' }">
     <!-- Balance banner -->
     <div class="mb-6">
-      <!-- <HeroBalanceCard :balance="0" currency="NGN" symbol="₦" /> -->
+      <HeroBalanceCard :balance="pageProps.fiatBalance" currency="NGN" symbol="₦" />
     </div>
 
     <!-- Two-column grid -->
@@ -63,7 +67,7 @@ const currentLabel = computed(() => ({
 
       <!-- Right dynamic form -->
       <div class="col-span-12 md:col-span-7 lg:col-span-8 xl:col-span-9">
-        <component :is="currentComponent" :label="currentLabel" />
+        <component :is="currentComponent" :label="currentLabel" :balance="pageProps.fiatBalance" />
       </div>
     </div>
   </AppLayout>

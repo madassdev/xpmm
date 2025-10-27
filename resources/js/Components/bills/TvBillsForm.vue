@@ -4,24 +4,20 @@ import Card from '@/Components/ui/Card.vue'
 import Button from '@/Components/ui/Button.vue'
 
 import BrandSelect from '@/Components/bills/BrandSelect.vue'
-import AssetSelect from '@/Components/bills/AssetSelect.vue'
 import DataBundleSelect from '@/Components/bills/DataBundleSelect.vue'
 import AccountInputWithBeneficiaries from '@/Components/bills/shared/AccountInputWithBeneficiaries.vue'
 import BillsPayModal from '@/Components/bills/shared/BillsPayModal.vue'
 import { useBeneficiaries } from '@/composables/useBeneficiaries'
+
+const props = defineProps({
+  balance: { type: Number, default: 0 },
+})
 
 // Providers (ensure logos exist under /public/img)
 const providers = [
   { value: 'dstv',      label: 'DStv',      logo: '/img/dstv.png' },
   { value: 'gotv',      label: 'GOtv',      logo: '/img/gotv.png' },
   { value: 'startimes', label: 'StarTimes', logo: '/img/startimes.png' },
-]
-
-// Pay assets (same style as Airtime/Electricity)
-const assets = [
-  { code: 'BTC',  label: 'BTC',  balance: '0.00', logo: '/img/btc.png'  },
-  { code: 'USDT', label: 'USDT', balance: '0.00', logo: '/img/usdt.png' },
-  { code: 'NGN',  label: 'NGN',  balance: '0.00', logo: '/img/ngn.png'  },
 ]
 
 // --- Mock bundle fetcher (swap with API later) ---
@@ -59,7 +55,6 @@ async function fetchTvBundles(provider) {
 // --- Form state ---
 const provider = ref('')      // dstv/gotv/startimes
 const smartcard = ref('')     // card/decoder number
-const asset = ref('BTC')      // pay method
 const bundleId = ref('')      // selected bundle
 
 const bundles = ref([])
@@ -75,10 +70,23 @@ watchEffect(async () => {
 })
 
 const selectedBundle = computed(() => bundles.value.find(b => b.id === bundleId.value) || null)
+const fiatBalance = computed(() => Number.isFinite(props.balance) ? Number(props.balance) : 0)
+const bundlePrice = computed(() => Number(selectedBundle.value?.price || 0))
+const insufficient = computed(() => bundlePrice.value > fiatBalance.value)
 
 const canSubmit = computed(() =>
-  provider.value && smartcard.value.length >= 6 && asset.value && bundleId.value
+  provider.value && smartcard.value.length >= 6 && bundleId.value && !insufficient.value
 )
+
+const balanceHint = computed(() => {
+  if (!bundleId.value) {
+    return `Available balance: ₦${fiatBalance.value.toLocaleString()}`
+  }
+  if (insufficient.value) {
+    return `Insufficient funds. Available balance: ₦${fiatBalance.value.toLocaleString()}`
+  }
+  return 'Payment will be deducted from your fiat wallet.'
+})
 
 // --- Modal state ---
 const modalOpen  = ref(false)
@@ -89,7 +97,7 @@ const modalLines = ref([])
 
 function randomMsg(ok) {
   const okMsgs  = ['Subscription completed.', 'TV bouquet activated.', 'Decoder credited successfully.']
-  const errMsgs = ['Payment could not be completed.', 'Provider timeout — please retry.', 'Insufficient balance on selected asset.']
+  const errMsgs = ['Payment could not be completed.', 'Provider timeout — please retry.', 'Insufficient fiat balance.']
   return ok ? okMsgs[Math.floor(Math.random()*okMsgs.length)]
             : errMsgs[Math.floor(Math.random()*errMsgs.length)]
 }
@@ -100,6 +108,7 @@ const { add } = useBeneficiaries()
 
 const submit = async () => {
   if (!canSubmit.value) return
+  if (insufficient.value) return
   const provLabel = providers.find(p => p.value === provider.value)?.label || provider.value
   modalOpen.value = true
   modalPhase.value = 'processing'
@@ -110,7 +119,7 @@ const submit = async () => {
     { label: 'Smartcard', value: smartcard.value },
     { label: 'Bundle',    value: selectedBundle.value?.name || '' },
     { label: 'Amount',    value: '₦' + Number(selectedBundle.value?.price || 0).toLocaleString() },
-    { label: 'Method',    value: asset.value },
+    { label: 'Payment Source',    value: 'Fiat Balance (NGN)' },
   ]
 
   // mock API
@@ -170,9 +179,13 @@ const retry = () => {
       </label>
     </div>
 
-    <!-- Asset -->
-    <div class="mt-4">
-      <AssetSelect v-model="asset" :options="assets" placeholder="BTC" />
+    <!-- Fiat balance -->
+    <div class="mt-4 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-4">
+      <div class="text-xs uppercase tracking-wide text-primary/80">Available Balance</div>
+      <div class="mt-1 text-lg font-semibold text-primary">₦{{ fiatBalance.toLocaleString() }}</div>
+      <p class="mt-1 text-xs text-primary/70">
+        TV subscriptions draw from your fiat wallet.
+      </p>
     </div>
 
     <!-- Bundle -->
@@ -182,6 +195,9 @@ const retry = () => {
         :options="bundles"
         :placeholder="loadingBundles ? 'Loading bundles…' : 'Select Bundle'"
       />
+      <p class="mt-2 text-xs" :class="insufficient ? 'text-red-600' : 'text-gray-500'">
+        {{ balanceHint }}
+      </p>
     </div>
 
     <!-- CTA -->

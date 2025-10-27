@@ -9,9 +9,7 @@ use App\Support\NetworkMap;
 use App\Models\BillTransaction;
 use Exception;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Hash;
 
 class MobileDataController extends Controller
 {
@@ -66,25 +64,36 @@ class MobileDataController extends Controller
             $redbillerPayload['callback_url'] = $data['callback_url'];
         }
 
-        $plan = $this->bills->getPlanByCode($provider, $code);
+        $plan = $this->bills->getDataPlanByCode($provider, $code);
+        
+        if (!$plan) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Plan not found',
+            ], 404);
+        }
+        
         $bundle = $plan['name'];
-        $amount = $plan['price'];
+        $amount = (int) $plan['price'];
         $product = "{$provider} - $bundle";
-        dd($product);
+        $redbillerPayload['amount'] = $amount;
+        // Store payment source in request payload for reference
+        $requestPayload = array_merge($redbillerPayload, [
+            'payment_source' => 'fiat_balance',
+            // Note: pin_hash is not stored for security reasons
+        ]);
+
         $tx = BillTransaction::create([
             'reference'         => $reference,
             'service'           => 'data',
             'product'           => $product,
             'network'           => $data['provider'],
             'phone'             => $data['phone'],
+            'plan_id'           => $code,
             'amount'            => (int) $amount,
             'provider'          => 'redbiller',
             'status'            => BillTransaction::S_PENDING,
-            'request_payload'   => $redbillerPayload, // what we’ll send out
-            'meta'              => [
-                'asset' => $data['asset'] ?? 'NGN',
-                'pin_hash' => Hash::make($data['pin']), // never log or return
-            ],
+            'request_payload'   => $requestPayload,
         ]);
 
         // 4) Call provider via BillsService (uses the redbiller payload)
@@ -97,7 +106,7 @@ class MobileDataController extends Controller
             'ported'       => $redbillerPayload['ported'] ?? null,
             'callback_url' => $redbillerPayload['callback_url'] ?? null,
             'plan' => $bundle,
-            // nothing else; asset/pin stay internal
+            // nothing else; payment source and any sensitive data stay internal
         ]);
 
         // 5) Update local txn from provider response

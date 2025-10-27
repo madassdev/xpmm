@@ -2,6 +2,7 @@
 
 namespace App\Services\Redbiller;
 
+use App\Models\Bill;
 use App\Models\BillTransaction;
 use Exception;
 use Illuminate\Support\Facades\Cache;
@@ -44,25 +45,6 @@ class BillsService
 
         $path = $this->client->path('airtime', 'purchase_create');
         $res  = $this->client->post($path, $payload);
-
-        // // Persist locally (non-fatal if DB is unavailable—feel free to wrap in try/catch)
-        // BillTransaction::updateOrCreate([
-        //     'reference' => $ref
-        // ], [
-        //     'reference'         => $ref,
-        //     'service'           => 'airtime',
-        //     'product'           => $payload['product'] ?? null,
-        //     'network'           => $input['network'] ?? null,
-        //     'phone'             => $payload['phone_no'],
-        //     'ported'            => !empty($input['ported']),
-        //     'amount'            => (int) ($input['amount'] ?? 0),
-        //     'callback_url'      => $payload['callback_url'] ?? null,
-        //     'provider'          => 'redbiller',
-        //     'status'            => $res['ok'] ? (strtoupper($res['json']['status'] ?? 'PENDING')) : 'FAILED',
-        //     'provider_txn_id'   => $res['json']['id'] ?? null,
-        //     'request_payload'   => $payload,
-        //     'provider_response' => $res['json'] ?? ['raw' => $res['body']],
-        // ]);
 
         return ['reference' => $ref, 'response' => $res];
     }
@@ -135,38 +117,89 @@ class BillsService
  
      public function getDataPlansList($product)
      {
-         $env = config('redbiller.env');
-         $cacheKey = "redbiller:data:plans:{$product}:{$env}";
-         $res = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($product) {
-             return $this->dataPlans($product);
-         });
+         // Check database first - plans synced within last 24 hours are considered fresh
+         $existingPlans = Bill::service('data')
+             ->provider($product)
+             ->where('synced_at', '>=', now()->subDay())
+             ->get();
+ 
+         if ($existingPlans->isNotEmpty()) {
+             return $existingPlans->map(function ($plan) {
+                 return [
+                     'id' => $plan->code,
+                     'price' => $plan->price,
+                     'name' => $plan->name,
+                     'meta' => $plan->meta,
+                 ];
+             })->toArray();
+         }
+ 
+         // Fetch from API if not in DB or stale
+         $res = $this->dataPlans($product);
          if (!($res['ok'] ?? false)) {
              $status = $res['status'];
              throw new Exception("Failed to fetch data plans from provider: [{$status}]");
          }
+ 
          $json = $res['json'] ?? [];
          $categories = $json['categories'] ?? $json['details']['categories'] ?? [];
-         $plans = [];
+         $now = now();
+ 
+         // Save to database
          foreach ($categories as $cat) {
-             // e.g., $cat = [ 'code' => '1GB-7days', 'amount' => 350, 'label' => '1GB (7 days)' ... ]
-             $plans[] = [
-                 'id'   => $cat['code']   ?? ($cat['plan_code'] ?? ''),
-                 'price' => (int) ($cat['amount'] ?? 0),
-                 'name'  => $cat['label']  ?? ($cat['name'] ?? ($cat['code'] ?? '')),
-                 'meta'   => $cat, // keep the raw in case FE wants more fields (validity, bandwidth, etc.)
-             ];
+             $code = $cat['code'] ?? ($cat['plan_code'] ?? '');
+             $price = (int) ($cat['amount'] ?? 0);
+             $name = $cat['label'] ?? ($cat['name'] ?? ($cat['code'] ?? ''));
+ 
+             Bill::updateOrCreate(
+                 [
+                     'service' => 'data',
+                     'provider' => $product,
+                     'code' => $code,
+                 ],
+                 [
+                     'name' => $name,
+                     'price' => $price,
+                     'meta' => $cat,
+                     'synced_at' => $now,
+                 ]
+             );
          }
  
-         return $plans;
+         // Return from database to ensure consistency
+         return Bill::service('data')
+             ->provider($product)
+             ->get()
+             ->map(function ($plan) {
+                 return [
+                     'id' => $plan->code,
+                     'price' => $plan->price,
+                     'name' => $plan->name,
+                     'meta' => $plan->meta,
+                 ];
+             })->toArray();
      }
  
      public function getDataPlanByCode($product, $code)
      {
+         // Try database first
+         $plan = Bill::service('data')
+             ->provider($product)
+             ->code($code)
+             ->first();
+ 
+         if ($plan) {
+             return [
+                 'id' => $plan->code,
+                 'price' => $plan->price,
+                 'name' => $plan->name,
+                 'meta' => $plan->meta,
+             ];
+         }
+ 
+         // If not in DB, fetch plans list (which will sync to DB)
          $plans = $this->getDataPlansList($product);
-         $plan = collect($plans)->filter(function($plan) use ($code){
-             return $plan['id'] == $code;
-         })->first();
-         return $plan;
+         return collect($plans)->firstWhere('id', $code);
      }
 
     public function dataPurchaseCreate(array $input): array
@@ -194,26 +227,6 @@ class BillsService
 
         $path = $this->client->path('data', 'purchase_create');
         $res  = $this->client->post($path, $payload);
-        // dd($res);
-
-        // // Persist locally (non-fatal if DB is unavailable—feel free to wrap in try/catch)
-        // BillTransaction::updateOrCreate([
-        //     'reference' => $ref
-        // ], [
-        //     'reference'         => $ref,
-        //     'service'           => 'data',
-        //     'product'           => $payload['product'] ?? null,
-        //     'network'           => $input['network'] ?? null,
-        //     'phone'             => $payload['phone_no'],
-        //     'ported'            => !empty($input['ported']),
-        //     'amount'            => (int) ($input['amount'] ?? 0),
-        //     'callback_url'      => $payload['callback_url'] ?? null,
-        //     'provider'          => 'redbiller', 
-        //     'status'            => $res['ok'] ? (strtoupper($res['json']['status'] ?? 'PENDING')) : 'FAILED',
-        //     'provider_txn_id'   => $res['json']['id'] ?? null,
-        //     'request_payload'   => $payload,
-        //     'provider_response' => $res['json'] ?? ['raw' => $res['body']],
-        // ]);
 
         return ['reference' => $ref, 'response' => $res];
     }
@@ -256,56 +269,96 @@ class BillsService
 
     public function getCablePlansList($provider)
     {
-        $env = config('redbiller.env');
-        $cacheKey = "redbiller:cable:plans:{$provider}:{$env}";
-        $res = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($provider) {
-            return $this->cablePlans($provider);
-        });
+        // Check database first - plans synced within last 24 hours are considered fresh
+        $existingPlans = Bill::service('cable')
+            ->provider($provider)
+            ->where('synced_at', '>=', now()->subDay())
+            ->get();
 
+        if ($existingPlans->isNotEmpty()) {
+            return $existingPlans->map(function ($plan) use ($provider) {
+                return [
+                    'id' => $plan->code,
+                    'price' => $plan->price,
+                    'name' => $plan->name,
+                    'plan' => "{$provider} - {$plan->name}",
+                    'meta' => $plan->meta,
+                ];
+            })->toArray();
+        }
+
+        // Fetch from API if not in DB or stale
+        $res = $this->cablePlans($provider);
         if (!($res['ok'] ?? false)) {
             $status = $res['status'];
-            throw new Exception("Failed to fetch data plans from provider: [{$status}]");
-        }
-        $json = $res['json'] ?? [];
-        $categories = $json['categories'] ?? $json['details']['categories'] ?? [];
-        $plans = [];
-        foreach ($categories as $cat) {
-            // e.g., $cat = [ 'code' => '1GB-7days', 'amount' => 350, 'label' => '1GB (7 days)' ... ]
-            $bundle = $cat['name'];
-            $plan = "{$provider} - $bundle";
-            $plans[] = [
-                'id'   => $cat['code']   ?? ($cat['plan_code'] ?? ''),
-                'price' => (int) ($cat['amount'] ?? 0),
-                'name'  => $cat['label']  ?? ($cat['name'] ?? ($cat['code'] ?? '')),
-                'plan' => $plan,
-                'meta'   => $cat, // keep the raw in case FE wants more fields (validity, bandwidth, etc.)
-            ];
+            throw new Exception("Failed to fetch cable plans from provider: [{$status}]");
         }
 
-        return $plans;
+        $json = $res['json'] ?? [];
+        $categories = $json['categories'] ?? $json['details']['categories'] ?? [];
+        $now = now();
+
+        // Save to database
+        foreach ($categories as $cat) {
+            $code = $cat['code'] ?? ($cat['plan_code'] ?? '');
+            $price = (int) ($cat['amount'] ?? 0);
+            $name = $cat['label'] ?? ($cat['name'] ?? ($cat['code'] ?? ''));
+
+            Bill::updateOrCreate(
+                [
+                    'service' => 'cable',
+                    'provider' => $provider,
+                    'code' => $code,
+                ],
+                [
+                    'name' => $name,
+                    'price' => $price,
+                    'meta' => $cat,
+                    'synced_at' => $now,
+                ]
+            );
+        }
+
+        // Return from database to ensure consistency
+        return Bill::service('cable')
+            ->provider($provider)
+            ->get()
+            ->map(function ($plan) use ($provider) {
+                return [
+                    'id' => $plan->code,
+                    'price' => $plan->price,
+                    'name' => $plan->name,
+                    'plan' => "{$provider} - {$plan->name}",
+                    'meta' => $plan->meta,
+                ];
+            })->toArray();
     }
 
     public function getCablePlanByCode($product, $code)
     {
-        $plans = $this->getDataPlansList($product);
-        $plan = collect($plans)->filter(function($plan) use ($code){
-            return $plan['id'] == $code;
-        })->first();
-        return $plan;
+        // Try database first
+        $plan = Bill::service('cable')
+            ->provider($product)
+            ->code($code)
+            ->first();
+
+        if ($plan) {
+            return [
+                'id' => $plan->code,
+                'price' => $plan->price,
+                'name' => $plan->name,
+                'plan' => "{$product} - {$plan->name}",
+                'meta' => $plan->meta,
+            ];
+        }
+
+        // If not in DB, fetch plans list (which will sync to DB)
+        $plans = $this->getCablePlansList($product);
+        return collect($plans)->firstWhere('id', $code);
     }
 
     public function cablePurchaseCreate(array $input): array
     {
-        // $data = [
-        //     "product" => "DStv",
-        //     "code" => "3800",
-        //     "smart_card_no" => "0000000000",
-        //     "customer_name" => "JOHN DOE",
-        //     "phone_no" => "08144698943",
-        //     "callback_url" => "https://domain.com",
-        //     "reference" => "TRalsGTyew01i"
-        // ];
-
         // Map FE → Redbiller
         $payload = [
             'product'  => $input['product'] ?? strtoupper($input['provider'] ?? ''), // support "network" alias
@@ -328,26 +381,6 @@ class BillsService
 
         $path = $this->client->path('cable', 'purchase_create');
         $res  = $this->client->post($path, $payload);
-        // dd($res);
-
-        // // Persist locally (non-fatal if DB is unavailable—feel free to wrap in try/catch)
-        // BillTransaction::updateOrCreate([
-        //     'reference' => $ref
-        // ], [
-        //     'reference'         => $ref,
-        //     'service'           => 'data',
-        //     'product'           => $payload['product'] ?? null,
-        //     'network'           => $input['network'] ?? null,
-        //     'phone'             => $payload['phone_no'],
-        //     'ported'            => !empty($input['ported']),
-        //     'amount'            => (int) ($input['amount'] ?? 0),
-        //     'callback_url'      => $payload['callback_url'] ?? null,
-        //     'provider'          => 'redbiller', 
-        //     'status'            => $res['ok'] ? (strtoupper($res['json']['status'] ?? 'PENDING')) : 'FAILED',
-        //     'provider_txn_id'   => $res['json']['id'] ?? null,
-        //     'request_payload'   => $payload,
-        //     'provider_response' => $res['json'] ?? ['raw' => $res['body']],
-        // ]);
 
         return ['reference' => $ref, 'response' => $res];
     }

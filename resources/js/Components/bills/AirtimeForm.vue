@@ -6,10 +6,13 @@ import Card from '@/Components/ui/Card.vue'
 import Button from '@/Components/ui/Button.vue'
 
 import BrandSelect from '@/Components/bills/BrandSelect.vue'
-import AssetSelect from '@/Components/bills/AssetSelect.vue'
 import BillsPayModal from '@/Components/bills/shared/BillsPayModal.vue'
 import PhoneInputWithBeneficiaries from '@/Components/bills/shared/PhoneInputWithBeneficiaries.vue'
 import { useBeneficiaries } from '@/composables/useBeneficiaries'
+
+const props = defineProps({
+  balance: { type: Number, default: 0 },
+})
 
 // Select data (ensure the logos exist in /public/img)
 const networks = [
@@ -18,25 +21,33 @@ const networks = [
   { value: 'glo', label: 'Glo', logo: '/img/glo.png' },
   { value: '9mobile', label: '9mobile', logo: '/img/9mobile.png' },
 ]
-const assets = [
-  { code: 'BTC', label: 'BTC', balance: '0.00', logo: '/img/btc.png' },
-  { code: 'USDT', label: 'USDT', balance: '0.00', logo: '/img/usdt.png' },
-  { code: 'NGN', label: 'NGN', balance: '0.00', logo: '/img/ngn.png' },
-]
 
 // Form state
 const network = ref('')      // start empty; shows placeholder until picked
 const phone = ref('')
-const asset = ref('BTC')
 const amount = ref('')
 
 const chips = [200, 500, 1000, 2000, 5000]
 const onlyDigits = (v) => (v || '').replace(/[^\d]/g, '')
 const setChip = (n) => (amount.value = String(n))
 
+const fiatBalance = computed(() => Number.isFinite(props.balance) ? Number(props.balance) : 0)
+const amountValue = computed(() => Number(amount.value || 0))
+const insufficient = computed(() => amountValue.value > fiatBalance.value)
+
 const valid = computed(() =>
-  network.value && asset.value && phone.value?.length >= 7 && Number(amount.value) > 0
+  network.value && phone.value?.length >= 7 && amountValue.value > 0 && !insufficient.value
 )
+
+const balanceHint = computed(() => {
+  if (!amount.value) {
+    return 'Payment will be deducted from your fiat balance.'
+  }
+  if (insufficient.value) {
+    return `Insufficient funds. Available balance: ₦${fiatBalance.value.toLocaleString()}`
+  }
+  return 'Fiat balance selected.'
+})
 
 // Modal state
 const modalOpen = ref(false)
@@ -48,7 +59,7 @@ const modalErrorCode = ref('')
 
 function randomMsg(ok) {
   const okMsgs = ['Your airtime has been delivered.', 'Purchase completed successfully.', 'We’ve credited the recipient’s number.']
-  const errMsgs = ['We could not complete this payment right now.', 'Network timeout. Please try again.', 'Insufficient balance on selected asset.']
+  const errMsgs = ['We could not complete this payment right now.', 'Network timeout. Please try again.', 'Insufficient fiat balance.']
   return ok ? okMsgs[Math.floor(Math.random() * okMsgs.length)]
     : errMsgs[Math.floor(Math.random() * errMsgs.length)]
 }
@@ -59,6 +70,7 @@ const { add } = useBeneficiaries()
 
 const submit = async () => {
   if (!valid.value) return
+  if (insufficient.value) return
   modalOpen.value = true
   modalPhase.value = 'confirm'
   modalTitle.value = ''
@@ -67,7 +79,7 @@ const submit = async () => {
     { label: 'Network', value: networks.find(n => n.value === network.value)?.label || network.value },
     { label: 'Phone', value: phone.value },
     { label: 'Amount', value: `₦${Number(amount.value).toLocaleString()}` },
-    { label: 'Method', value: asset.value },
+    { label: 'Payment Source', value: 'Fiat Balance (NGN)' },
   ]
 }
 
@@ -80,7 +92,6 @@ const onSubmitPin = async (pin) => {
       network: network.value,
       phone: phone.value,
       amount: Number(amount.value),
-      asset: asset.value,
       pin,
     }
 
@@ -170,9 +181,13 @@ const retry = () => {
       </label>
     </div>
 
-    <!-- 3) Asset -->
-    <div class="mt-4">
-      <AssetSelect v-model="asset" :options="assets" placeholder="BTC" />
+    <!-- 3) Fiat balance -->
+    <div class="mt-4 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-4">
+      <div class="text-xs uppercase tracking-wide text-primary/80">Available Balance</div>
+      <div class="mt-1 text-lg font-semibold text-primary">₦{{ fiatBalance.toLocaleString() }}</div>
+      <p class="mt-1 text-xs text-primary/70">
+        Bills will be charged from your fiat wallet.
+      </p>
     </div>
 
     <!-- 4) Amount -->
@@ -181,6 +196,9 @@ const retry = () => {
         placeholder="Enter Amount"
         class="w-full bg-transparent placeholder-gray-400 text-gray-900 border-none ring-0 focus:ring-0 focus:border-0 focus:outline-none outline-none" />
     </div>
+    <p class="mt-2 text-xs" :class="insufficient ? 'text-red-600' : 'text-gray-500'">
+      {{ balanceHint }}
+    </p>
 
     <!-- Chips -->
     <div class="mt-3 grid grid-cols-2 sm:grid-cols-5 gap-3">

@@ -1,26 +1,19 @@
 <script setup>
+import { computed } from 'vue'
+import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import HeroBalanceCard from '@/Components/composite/HeroBalanceCard.vue'
 import TotalAssetsCard from '@/Components/composite/TotalAssetsCard.vue'
 import TopAssetSummary from '@/Components/composite/TopAssetSummary.vue'
 import RecentTransactions from '@/Components/composite/RecentTransactions.vue'
 import MyCardsPanel from '@/Components/composite/MyCardsPanel.vue'
+import { getDashboardNavSections } from '@/constants/dashboardNav'
 
-const navSections = [
-  { label: 'General', items: [
-    { key: 'overview',  label: 'Overview',   href: (typeof route === 'function' ? route('dashboard') : '#'), icon: 'LayoutDashboard' },
-    { key: 'giftcards', label: 'Giftcards',  href: '#', icon: 'Gift' },
-    { key: 'wallets',   label: 'Wallets',    href: '#', icon: 'Wallet' },
-    { key: 'cards',     label: 'Cards',      href: '#', icon: 'CreditCard' },
-    { key: 'referrals', label: 'Referrals',  href: '#', icon: 'Users' },
-    { key: 'txns',      label: 'Transactions', href: '#', icon: 'ReceiptText' },
-  ]},
-  { label: 'Utilities', items: [
-    { key: 'bills',   label: 'Bills',    href: '#', icon: 'Receipt' },
-    { key: 'transfer',label: 'Transfer', href: '#', icon: 'Send' },
-    { key: 'bet',     label: 'Bet Top-up', href: '#', icon: 'TicketPercent' },
-  ]},
-]
+const props = defineProps({
+  giftcardTransactions: { type: Array, default: () => [] },
+})
+
+const navSections = getDashboardNavSections()
 
 // Mock data
 const assets = [
@@ -29,8 +22,19 @@ const assets = [
   { code: 'USDT', name: 'Tether', value: 0, deltaPct: 0.00, icon: null, symbol: '₦' },
 ]
 const filters = { range: '24H', rank: 'Gainers', sort: 'DESC' }
-const txns = []
 const cards = []
+
+const txns = computed(() => props.giftcardTransactions ?? [])
+
+const viewGiftcardTransactions = () => {
+  const href = typeof route === 'function' ? route('giftcards.index') : '/gift-cards'
+  router.visit(href)
+}
+
+const emptyState = {
+  title: 'No giftcard transactions yet',
+  subtitle: 'Your giftcard trades will appear here as soon as you complete one.',
+}
 </script>
 
 <template>
@@ -64,7 +68,11 @@ const cards = []
       </div>
 
       <div class="col-span-12 lg:col-span-8">
-        <RecentTransactions :rows="txns" @viewAll="() => console.log('view all')" />
+        <RecentTransactions
+          :rows="txns"
+          :empty="emptyState"
+          @viewAll="viewGiftcardTransactions"
+        />
       </div>
       <div class="col-span-12 lg:col-span-4">
         <MyCardsPanel :cards="cards" @create="() => console.log('create card')" />

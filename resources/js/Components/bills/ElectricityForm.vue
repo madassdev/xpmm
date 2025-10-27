@@ -6,9 +6,12 @@ import Button from '@/Components/ui/Button.vue'
 import SoftSelect from '@/Components/bills/SoftSelect.vue' // for Meter Type only
 import ProviderLongSelect from '@/Components/bills/ProviderLongSelect.vue'
 import AccountInputWithBeneficiaries from '@/Components/bills/shared/AccountInputWithBeneficiaries.vue'
-import AssetSelect from '@/Components/bills/AssetSelect.vue'
 import BillsPayModal from '@/Components/bills/shared/BillsPayModal.vue'
 import { useBeneficiaries } from '@/composables/useBeneficiaries'
+
+const props = defineProps({
+  balance: { type: Number, default: 0 },
+})
 
 // 1) Meter types
 const meterTypes = [
@@ -24,17 +27,9 @@ const discos = [
   'Port Harcourt Electricity'
 ]
 
-// 3) Assets (like Airtime)
-const assets = [
-  { code: 'BTC',  label: 'BTC',  balance: '0.00', logo: '/img/btc.png'  },
-  { code: 'USDT', label: 'USDT', balance: '0.00', logo: '/img/usdt.png' },
-  { code: 'NGN',  label: 'NGN',  balance: '0.00', logo: '/img/ngn.png'  },
-]
-
 // Form state
 const meterType = ref('')        // prepaid | postpaid
 const provider  = ref('')        // computed id
-const asset     = ref('BTC')     // pay with
 const meterNo   = ref('')
 const amount    = ref('')
 
@@ -57,9 +52,22 @@ const providerOptions = computed(() => {
 watch(meterType, () => { provider.value = '' })
 
 // Validation
+const fiatBalance = computed(() => Number.isFinite(props.balance) ? Number(props.balance) : 0)
+const amountValue = computed(() => Number(amount.value || 0))
+const insufficient = computed(() => amountValue.value > fiatBalance.value)
 const canSubmit = computed(() =>
-  meterType.value && provider.value && asset.value && meterNo.value.length >= 6 && Number(amount.value) > 0
+  meterType.value && provider.value && meterNo.value.length >= 6 && amountValue.value > 0 && !insufficient.value
 )
+
+const balanceHint = computed(() => {
+  if (!amount.value) {
+    return 'Payment will be deducted from your fiat balance.'
+  }
+  if (insufficient.value) {
+    return `Insufficient funds. Available balance: ₦${fiatBalance.value.toLocaleString()}`
+  }
+  return 'Fiat balance selected for this payment.'
+})
 
 // Modal state
 const modalOpen  = ref(false)
@@ -70,7 +78,7 @@ const modalLines = ref([])
 
 function randomMsg(ok) {
   const okMsgs  = ['Payment successful.', 'Meter recharged successfully.', 'Token delivered to your meter account.']
-  const errMsgs = ['Payment could not be completed.', 'Disco timeout — please retry.', 'Insufficient asset balance.']
+  const errMsgs = ['Payment could not be completed.', 'Disco timeout — please retry.', 'Insufficient fiat balance.']
   return ok ? okMsgs[Math.floor(Math.random()*okMsgs.length)]
             : errMsgs[Math.floor(Math.random()*errMsgs.length)]
 }
@@ -81,6 +89,7 @@ const { add } = useBeneficiaries()
 
 const submit = async () => {
   if (!canSubmit.value) return
+  if (insufficient.value) return
   modalOpen.value = true
   modalPhase.value = 'processing'
   modalTitle.value = ''
@@ -91,7 +100,7 @@ const submit = async () => {
     { label: 'Provider',   value: providerName },
     { label: 'Meter',      value: meterNo.value },
     { label: 'Amount',     value: '₦' + Number(amount.value).toLocaleString() },
-    { label: 'Method',     value: asset.value }, // changed from Wallet → Asset
+    { label: 'Payment Source',     value: 'Fiat Balance (NGN)' },
   ]
 
   // mock API
@@ -147,9 +156,13 @@ const retry = () => {
       />
     </div>
 
-    <!-- Asset (replaces wallet) -->
-    <div class="mt-4">
-      <AssetSelect v-model="asset" :options="assets" placeholder="BTC" />
+    <!-- Fiat balance -->
+    <div class="mt-4 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-4">
+      <div class="text-xs uppercase tracking-wide text-primary/80">Available Balance</div>
+      <div class="mt-1 text-lg font-semibold text-primary">₦{{ fiatBalance.toLocaleString() }}</div>
+      <p class="mt-1 text-xs text-primary/70">
+        Electricity payments draw from your fiat wallet.
+      </p>
     </div>
 
     <!-- Meter Number with beneficiaries -->
@@ -191,6 +204,10 @@ const retry = () => {
         ₦{{ c.toLocaleString() }}
       </button>
     </div>
+
+    <p class="mt-2 text-xs" :class="insufficient ? 'text-red-600' : 'text-gray-500'">
+      {{ balanceHint }}
+    </p>
 
     <!-- CTA -->
     <Button class="w-full mt-6" :disabled="!canSubmit" @click="submit">

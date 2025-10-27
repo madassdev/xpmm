@@ -30,3 +30,21 @@ export async function get(url, data, opts = {}) {
     headers: { ...(opts.headers || {}), 'Idempotency-Key': idem },
   })
 }
+
+export async function put(url, data, opts = {}) {
+  await ensureSanctum()
+  const idem = opts.headers?.['Idempotency-Key'] ?? crypto.randomUUID()
+  return api.put(url, data, {
+    ...opts,
+    headers: { ...(opts.headers || {}), 'Idempotency-Key': idem },
+  })
+}
+
+export async function destroy(url, opts = {}) {
+  await ensureSanctum()
+  const idem = opts.headers?.['Idempotency-Key'] ?? crypto.randomUUID()
+  return api.delete(url, {
+    ...opts,
+    headers: { ...(opts.headers || {}), 'Idempotency-Key': idem },
+  })
+}
