@@ -6,13 +6,18 @@ use Illuminate\Foundation\Http\FormRequest;
 
 class DataPurchaseRequest extends FormRequest
 {
+    public function authorize(): bool
+    {
+        return true;
+    }
+
     public function rules(): array
     {
         return [
             'provider' => 'required|string|in:mtn,airtel,glo,9mobile',
             'phone'   => ['required','string','min:10','max:20','regex:/^[0-9+]+$/'],
             'pin'     => ['required','string','regex:/^[0-9]{4,6}$/'], // 4–6 digits
-            'planId'     => ['required','string','regex:/^[0-9]{4,6}$/'], // 4–6 digits
+            'planId'     => ['required','string','max:64'],
             // optional passthroughs if you ever add them on FE
             'ported'       => 'nullable|boolean',
             'callback_url' => 'nullable|url',

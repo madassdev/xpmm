@@ -265,6 +265,15 @@ class BillsService
         $path = $this->client->path('cable', 'plans_list');
         return $this->client->post($path, ['product' => $product]);
     }
+
+    public function cableValidate(string $product, string $smartcard): array
+    {
+        $path = $this->client->path('cable', 'validate');
+        return $this->client->post($path, [
+            'product'       => $product,
+            'smart_card_no' => $smartcard,
+        ]);
+    }
     
 
     public function getCablePlansList($provider)
@@ -380,6 +389,161 @@ class BillsService
         $payload['reference'] = $ref;
 
         $path = $this->client->path('cable', 'purchase_create');
+        $res  = $this->client->post($path, $payload);
+
+        return ['reference' => $ref, 'response' => $res];
+    }
+
+    /* =========================
+     * Internet
+     * ========================= */
+
+    public function internetPlans(string $product): array
+    {
+        $path = $this->client->path('internet', 'plans_list');
+        return $this->client->post($path, ['product' => $product]);
+    }
+
+    public function getInternetPlansList($provider)
+    {
+        $existingPlans = Bill::service('internet')
+            ->provider($provider)
+            ->where('synced_at', '>=', now()->subDay())
+            ->get();
+
+        if ($existingPlans->isNotEmpty()) {
+            return $existingPlans->map(function ($plan) {
+                return [
+                    'id'    => $plan->code,
+                    'price' => $plan->price,
+                    'name'  => $plan->name,
+                    'meta'  => $plan->meta,
+                ];
+            })->toArray();
+        }
+
+        $res = $this->internetPlans($provider);
+        if (!($res['ok'] ?? false)) {
+            $status = $res['status'];
+            throw new Exception("Failed to fetch internet plans from provider: [{$status}]");
+        }
+
+        $json = $res['json'] ?? [];
+        $categories = $json['categories'] ?? $json['details']['categories'] ?? [];
+        $now = now();
+
+        foreach ($categories as $cat) {
+            $code = $cat['code'] ?? ($cat['plan_code'] ?? '');
+            $price = (int) ($cat['amount'] ?? 0);
+            $name = $cat['label'] ?? ($cat['name'] ?? ($cat['code'] ?? ''));
+
+            Bill::updateOrCreate(
+                [
+                    'service'  => 'internet',
+                    'provider' => $provider,
+                    'code'     => $code,
+                ],
+                [
+                    'name'     => $name,
+                    'price'    => $price,
+                    'meta'     => $cat,
+                    'synced_at'=> $now,
+                ]
+            );
+        }
+
+        return Bill::service('internet')
+            ->provider($provider)
+            ->get()
+            ->map(function ($plan) {
+                return [
+                    'id'    => $plan->code,
+                    'price' => $plan->price,
+                    'name'  => $plan->name,
+                    'meta'  => $plan->meta,
+                ];
+            })->toArray();
+    }
+
+    public function getInternetPlanByCode($provider, $code)
+    {
+        $plan = Bill::service('internet')
+            ->provider($provider)
+            ->code($code)
+            ->first();
+
+        if ($plan) {
+            return [
+                'id'    => $plan->code,
+                'price' => $plan->price,
+                'name'  => $plan->name,
+                'meta'  => $plan->meta,
+            ];
+        }
+
+        $plans = $this->getInternetPlansList($provider);
+        return collect($plans)->firstWhere('id', $code);
+    }
+
+    public function internetPurchaseCreate(array $input): array
+    {
+        $ref = $input['reference'] ?? Str::ulid()->toBase32();
+
+        $account = $input['account_id']
+            ?? $input['customer_id']
+            ?? $input['customer_no']
+            ?? $input['account']
+            ?? $input['phone_no']
+            ?? '';
+
+        $payload = [
+            'product'        => $input['product'] ?? '',
+            'code'           => $input['plan'] ?? $input['code'] ?? '',
+            'reference'      => $ref,
+            'amount'         => (int) ($input['amount'] ?? 0),
+            'customer_id'    => $account,
+            'customer_no'    => $account,
+            'account_id'     => $account,
+        ];
+
+        if (!empty($input['callback_url'])) {
+            $payload['callback_url'] = $input['callback_url'];
+        }
+
+        $path = $this->client->path('internet', 'purchase_create');
+        $res  = $this->client->post($path, $payload);
+
+        return ['reference' => $ref, 'response' => $res];
+    }
+
+    /* =========================
+     * Betting
+     * ========================= */
+
+    public function bettingPurchaseCreate(array $input): array
+    {
+        $ref = $input['reference'] ?? Str::ulid()->toBase32();
+
+        $account = $input['account_id']
+            ?? $input['customer_id']
+            ?? $input['customer_no']
+            ?? $input['account']
+            ?? '';
+
+        $payload = [
+            'product'     => $input['product'] ?? '',
+            'amount'      => (int) ($input['amount'] ?? 0),
+            'reference'   => $ref,
+            'customer_id' => $account,
+            'customer_no' => $account,
+            'account_id'  => $account,
+        ];
+
+        if (!empty($input['callback_url'])) {
+            $payload['callback_url'] = $input['callback_url'];
+        }
+
+        $path = $this->client->path('betting', 'purchase_create');
         $res  = $this->client->post($path, $payload);
 
         return ['reference' => $ref, 'response' => $res];

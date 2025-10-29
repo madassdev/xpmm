@@ -26,10 +26,13 @@ return [
      |------------------------------------------------------------
      */
     'versions' => [
-        'airtime'    => '1.0', // purchase/create, status, list, retry, retried-trail
+        'airtime'     => '1.0', // purchase/create, status, list, retry, retried-trail
         'airtime_pin' => '1.3', // if you use pins later
-        'data'       => '1.0', // plans/list, purchase/status, purchase/list
+        'data'        => '1.0', // plans/list, purchase/status, purchase/list
         'electricity' => '1.0',
+        'internet'    => '1.0',
+        'cable'       => '1.0',
+        'betting'     => '1.0',
     ],
 
     /*
@@ -60,12 +63,24 @@ return [
             'purchase_status' => '/{v}/bills/electricity/purchase/status',
             'purchase_list'   => '/{v}/bills/electricity/purchase/list',
         ],
+        'internet' => [
+            'plans_list'       => '/{v}/bills/internet/plans/list',
+            'purchase_create'  => '/{v}/bills/internet/purchase/create',
+            'purchase_status'  => '/{v}/bills/internet/purchase/status',
+            'purchase_list'    => '/{v}/bills/internet/purchase/list',
+        ],
         'cable' => [
             'validate'        => '/{v}/bills/cable/validate',
             'plans_list'       => '/{v}/bills/cable/plans/list',
             'purchase_create' => '/{v}/bills/cable/plans/purchase/create',
             'purchase_status' => '/{v}/bills/cable/purchase/status',
             'purchase_list'   => '/{v}/bills/cable/purchase/list',
+        ],
+        'betting' => [
+            'validate'        => '/{v}/bills/betting/validate',
+            'purchase_create' => '/{v}/bills/betting/purchase/create',
+            'purchase_status' => '/{v}/bills/betting/purchase/status',
+            'purchase_list'   => '/{v}/bills/betting/purchase/list',
         ],
     ],
 ];

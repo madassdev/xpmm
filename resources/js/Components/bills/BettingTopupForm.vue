@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue'
+import { post } from '@/lib/api'
 import Card from '@/Components/ui/Card.vue'
 import Button from '@/Components/ui/Button.vue'
 
@@ -22,12 +23,10 @@ const providers = [
   { value: 'msport',   label: 'MSport',   logo: '/img/msport.png' },
 ]
 
-// Form state
 const provider = ref('')
 const account  = ref('')     // account ID / username / phone (can be alphanumeric)
 const amount   = ref('')
 
-// Quick-select chips
 const chips = [500, 1000, 2000, 5000, 10000]
 const onlyDigits = (v) => (v || '').replace(/[^\d]/g, '')
 const setChip = (n) => (amount.value = String(n))
@@ -50,21 +49,13 @@ const balanceHint = computed(() => {
   return 'Fiat balance selected for this top-up.'
 })
 
-// Modal state
 const modalOpen  = ref(false)
-const modalPhase = ref('processing') // 'processing'|'success'|'error'
+const modalPhase = ref('confirm')
 const modalTitle = ref('')
 const modalMsg   = ref('')
 const modalLines = ref([])
+const modalErrorCode = ref('')
 
-function randomMsg(ok) {
-  const okMsgs  = ['Top-up successful.', 'Betting wallet funded.', 'Account credited instantly.']
-  const errMsgs = ['Payment could not be completed.', 'Provider timeout — please retry.', 'Insufficient fiat balance.']
-  return ok ? okMsgs[Math.floor(Math.random()*okMsgs.length)]
-            : errMsgs[Math.floor(Math.random()*errMsgs.length)]
-}
-
-// Beneficiaries
 const saveBeneficiary = ref(true)
 const { add } = useBeneficiaries()
 
@@ -74,47 +65,62 @@ const submit = async () => {
   const provLabel = providers.find(p => p.value === provider.value)?.label || provider.value
 
   modalOpen.value = true
-  modalPhase.value = 'processing'
+  modalPhase.value = 'confirm'
   modalTitle.value = ''
   modalMsg.value = ''
+  modalErrorCode.value = ''
   modalLines.value = [
     { label: 'Provider', value: provLabel },
     { label: 'Account',  value: account.value },
     { label: 'Amount',   value: '₦' + Number(amount.value).toLocaleString() },
     { label: 'Payment Source',   value: 'Fiat Balance (NGN)' },
   ]
+}
 
-  // mock API
-  await new Promise(r => setTimeout(r, 1200))
-  const ok = Math.random() < 0.7
-  modalPhase.value = ok ? 'success' : 'error'
-  modalTitle.value  = ok ? 'Betting top-up paid' : 'Payment failed'
-  modalMsg.value    = randomMsg(ok)
-
-  if (ok && saveBeneficiary.value) {
-    const label = `${provLabel} • ${account.value.slice(0,6)}…`
-    add({
-      service: 'betting',
-      kind: 'accountId',
-      providerId: provider.value,
-      label,
-      value: account.value,
+const onSubmitPin = async (pin) => {
+  modalErrorCode.value = ''
+  modalTitle.value = ''
+  modalMsg.value = ''
+  try {
+    modalPhase.value = 'processing'
+    const { data } = await post('/bills/betting', {
+      provider: provider.value,
+      account: account.value,
+      amount: Number(amount.value),
+      pin,
     })
+
+    modalPhase.value = 'success'
+    modalTitle.value  = 'Betting top-up created'
+    modalMsg.value    = data?.message || 'Betting wallet funded successfully.'
+
+    if (saveBeneficiary.value) {
+      const provLabel = providers.find(p => p.value === provider.value)?.label || provider.value
+      const label = `${provLabel} • ${account.value.slice(0,6)}…`
+      add({
+        service: 'betting',
+        kind: 'accountId',
+        providerId: provider.value,
+        label,
+        value: account.value,
+      })
+    }
+  } catch (error) {
+    const msg = error?.response?.data?.message || 'Payment failed.'
+    modalMsg.value = msg
+    if (msg.toLowerCase().includes('pin')) {
+      modalErrorCode.value = 'invalid_pin'
+    }
+    modalPhase.value = 'error'
   }
 }
 
 const closeModal = () => (modalOpen.value = false)
 const retry = () => {
-  modalOpen.value = true
-  modalPhase.value = 'processing'
+  modalPhase.value = 'confirm'
   modalTitle.value = ''
   modalMsg.value = ''
-  setTimeout(() => {
-    const ok = Math.random() < 0.7
-    modalPhase.value = ok ? 'success' : 'error'
-    modalTitle.value  = ok ? 'Betting top-up paid' : 'Payment failed'
-    modalMsg.value    = randomMsg(ok)
-  }, 900)
+  modalErrorCode.value = ''
 }
 </script>
 
@@ -190,7 +196,9 @@ const retry = () => {
       :title="modalTitle"
       :message="modalMsg"
       :details="modalLines"
+      :errorCode="modalErrorCode"
       @close="closeModal"
+      @submit="onSubmitPin"
       @primary="closeModal"
       @secondary="retry"
     />

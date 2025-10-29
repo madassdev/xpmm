@@ -22,12 +22,13 @@ export async function post(url, data, opts = {}) {
     headers: { ...(opts.headers || {}), 'Idempotency-Key': idem },
   })
 }
-export async function get(url, data, opts = {}) {
+export async function get(url, config = {}) {
   await ensureSanctum()
-  const idem = opts.headers?.['Idempotency-Key'] ?? crypto.randomUUID()
-  return api.get(url, data, {
-    ...opts,
-    headers: { ...(opts.headers || {}), 'Idempotency-Key': idem },
+  const headers = config.headers || {}
+  const idem = headers['Idempotency-Key'] ?? crypto.randomUUID()
+  return api.get(url, {
+    ...config,
+    headers: { ...headers, 'Idempotency-Key': idem },
   })
 }
 
