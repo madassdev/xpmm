@@ -9,7 +9,9 @@ use App\Support\NetworkMap;
 use App\Models\BillTransaction;
 use Exception;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class MobileDataController extends Controller
 {
@@ -47,12 +49,17 @@ class MobileDataController extends Controller
         $code = $data['planId'];
         $provider = NetworkMap::toProduct($data['provider']);
 
+        $user = $r->user();
+        if (!$user?->pin || !Hash::check($data['pin'], $user->pin)) {
+            throw ValidationException::withMessages(['pin' => 'Incorrect PIN.']);
+        }
+
         $reference = $data['reference'] ?? Str::ulid()->toBase32();
 
         $redbillerPayload = [
             'product'   => $provider,
             'phone_no'  => $data['phone'],
-            'code'    => $code,
+            'code'      => $code,
             'reference' => $reference,
         ];
 
@@ -80,7 +87,6 @@ class MobileDataController extends Controller
         // Store payment source in request payload for reference
         $requestPayload = array_merge($redbillerPayload, [
             'payment_source' => 'fiat_balance',
-            // Note: pin_hash is not stored for security reasons
         ]);
 
         $tx = BillTransaction::create([
@@ -94,6 +100,11 @@ class MobileDataController extends Controller
             'provider'          => 'redbiller',
             'status'            => BillTransaction::S_PENDING,
             'request_payload'   => $requestPayload,
+            'meta'              => [
+                'payment_source' => 'fiat_balance',
+                'pin_hash'       => Hash::make($data['pin']),
+                'plan_name'      => $bundle,
+            ],
         ]);
 
         // 4) Call provider via BillsService (uses the redbiller payload)
@@ -105,7 +116,7 @@ class MobileDataController extends Controller
             'reference'    => $reference,
             'ported'       => $redbillerPayload['ported'] ?? null,
             'callback_url' => $redbillerPayload['callback_url'] ?? null,
-            'plan' => $bundle,
+            'plan'         => $code,
             // nothing else; payment source and any sensitive data stay internal
         ]);
 
@@ -117,6 +128,10 @@ class MobileDataController extends Controller
             'status'            => $ok ? strtoupper($body['status'] ?? 'PENDING') : BillTransaction::S_FAILED,
             'provider_txn_id'   => $body['id'] ?? $tx->provider_txn_id,
             'provider_response' => $body,
+            'customer_name'     => $body['customer_name'] ?? $tx->customer_name,
+            'amount_paid'       => (int) ($body['amount_paid'] ?? $tx->amount_paid),
+            'fee'               => (int) ($body['fee'] ?? $tx->fee),
+            'cost'              => (int) ($body['amount_debited'] ?? $tx->cost),
         ]);
 
         // 6) Return safe response (never return pin or pin_hash)
@@ -127,6 +142,9 @@ class MobileDataController extends Controller
                 'ok'     => $ok,
                 'status' => $res['response']['status'] ?? null,
             ],
+            'message'   => $body['message']
+                ?? ($body['details']['message'] ?? null)
+                ?? 'Data purchase request submitted successfully.',
         ], $ok ? 200 : 422);
     }
 }

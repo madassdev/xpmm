@@ -5,6 +5,10 @@ use App\Http\Controllers\Admin\CryptoAssetController;
 use App\Http\Controllers\Admin\GiftcardController as AdminGiftcardController;
 use App\Http\Controllers\Admin\GiftcardTransactionController;
 use App\Http\Controllers\Bills\AirtimeController;
+use App\Http\Controllers\Bills\BettingController;
+use App\Http\Controllers\Bills\CableController;
+use App\Http\Controllers\Bills\ElectricityController;
+use App\Http\Controllers\Bills\InternetController;
 use App\Http\Controllers\Bills\MobileDataController;
 use App\Http\Controllers\BillsController;
 use App\Http\Controllers\DashboardController;
@@ -89,6 +93,18 @@ Route::middleware('auth')->group(function () {
     Route::post('/bills/airtime', [AirtimeController::class,'purchase']);
     Route::post('/bills/data', [MobileDataController::class,'purchase']);
     Route::get('/bills/data/plans', [MobileDataController::class, 'getPlans']); // ?network=mtn
+
+    Route::get('/bills/internet/plans', [InternetController::class, 'plans']);
+    Route::post('/bills/internet', [InternetController::class, 'purchase']);
+
+    Route::get('/bills/tv/plans', [CableController::class, 'plans']);
+    Route::post('/bills/tv/validate', [CableController::class, 'validateCustomer']);
+    Route::post('/bills/tv', [CableController::class, 'purchase']);
+
+    Route::post('/bills/electricity/validate', [ElectricityController::class, 'validateCustomer']);
+    Route::post('/bills/electricity', [ElectricityController::class, 'purchase']);
+
+    Route::post('/bills/betting', [BettingController::class, 'purchase']);
 });
 
 // Public giftcard listing

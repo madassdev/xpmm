@@ -11,7 +11,7 @@ class ElectricityValidateRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return false;
+        return true;
     }
 
     /**
@@ -25,5 +25,18 @@ class ElectricityValidateRequest extends FormRequest
             'meter_no'   => 'required|string|max:32',
             'type'       => 'required|in:prepaid,postpaid',
         ];
+    }
+
+    public function prepareForValidation(): void
+    {
+        $raw = strtolower(trim((string) $this->input('disco')));
+        $normalized = str_replace([' electricity', '-electricity'], '', $raw);
+        $normalized = str_replace(' ', '', $normalized);
+
+        $this->merge([
+            'disco'    => $normalized,
+            'meter_no' => preg_replace('/\s+/', '', (string) $this->input('meter_no')),
+            'type'     => strtolower(trim((string) $this->input('type'))),
+        ]);
     }
 }

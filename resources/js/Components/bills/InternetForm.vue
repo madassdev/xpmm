@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed, watchEffect } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
+import { get, post } from '@/lib/api'
 import Card from '@/Components/ui/Card.vue'
 import Button from '@/Components/ui/Button.vue'
 
@@ -22,43 +23,6 @@ const providers = [
   { value: 'fiberone',   label: 'FiberOne',   logo: '/img/fiberone.png' },
 ]
 
-// Mock API: fetch plans by provider
-async function fetchInternetPlans(provider) {
-  await new Promise(r => setTimeout(r, 400))
-  switch (provider) {
-    case 'spectranet':
-      return [
-        { id: 'sp_10',  name: '10GB – 30 Days',    price: 3500 },
-        { id: 'sp_30',  name: '30GB – 30 Days',    price: 9000 },
-        { id: 'sp_unl', name: 'Unlimited – 30D',   price: 19000 },
-      ]
-    case 'smile':
-      return [
-        { id: 'sm_3',   name: '3GB – 7 Days',      price: 1200 },
-        { id: 'sm_15',  name: '15GB – 30 Days',    price: 5500 },
-        { id: 'sm_50',  name: '50GB – 30 Days',    price: 15000 },
-      ]
-    case 'swift':
-      return [
-        { id: 'sw_5',   name: '5GB – 7 Days',      price: 1800 },
-        { id: 'sw_25',  name: '25GB – 30 Days',    price: 7800 },
-        { id: 'sw_unl', name: 'Unlimited – 30D',   price: 21000 },
-      ]
-    case 'ipnx':
-      return [
-        { id: 'ip_12',  name: '12GB – 30 Days',    price: 4200 },
-        { id: 'ip_40',  name: '40GB – 30 Days',    price: 11500 },
-        { id: 'ip_100', name: '100GB – 60 Days',   price: 26500 },
-      ]
-    default: // fiberone or others
-      return [
-        { id: 'fb_basic',  name: 'Basic – 15Mbps – 30D',  price: 12000 },
-        { id: 'fb_plus',   name: 'Plus – 30Mbps – 30D',   price: 18000 },
-        { id: 'fb_premium',name: 'Premium – 50Mbps – 30D',price: 26000 },
-      ]
-  }
-}
-
 // Form state
 const provider = ref('')      // selected ISP
 const account  = ref('')      // account/customer/router id (alphanumeric)
@@ -66,13 +30,44 @@ const bundleId = ref('')      // selected plan
 
 const plans = ref([])
 const loadingPlans = ref(false)
+const plansError = ref('')
 
-watchEffect(async () => {
-  if (!provider.value) { plans.value = []; bundleId.value = ''; return }
+async function loadPlans(providerId) {
+  plansError.value = ''
+  if (!providerId) {
+    plans.value = []
+    bundleId.value = ''
+    return
+  }
   loadingPlans.value = true
-  plans.value = await fetchInternetPlans(provider.value)
-  loadingPlans.value = false
-  if (!plans.value.find(p => p.id === bundleId.value)) bundleId.value = ''
+  try {
+    const { data } = await get('/bills/internet/plans', { params: { provider: providerId } })
+    const list = Array.isArray(data?.plans) ? data.plans : []
+    plans.value = list.map(p => ({
+      id: p.id ?? p.code ?? p.planId ?? Math.random().toString(36).slice(2),
+      name: p.name ?? p.plan ?? 'Plan',
+      price: Number(p.price ?? p.amount ?? 0),
+    }))
+  } catch (error) {
+    plansError.value = error?.response?.data?.message || 'Failed to load plans. Please try again.'
+    plans.value = []
+  } finally {
+    loadingPlans.value = false
+    if (!plans.value.find(p => p.id === bundleId.value)) bundleId.value = ''
+  }
+}
+
+onMounted(async () => {
+  if (!provider.value && providers.length) {
+    provider.value = providers[0].value
+  }
+  await loadPlans(provider.value)
+})
+
+watch(provider, async (nv, ov) => {
+  if (nv === ov) return
+  bundleId.value = ''
+  await loadPlans(nv)
 })
 
 const selectedPlan = computed(() => plans.value.find(p => p.id === bundleId.value) || null)
@@ -96,31 +91,25 @@ const balanceHint = computed(() => {
 
 // Modal state
 const modalOpen  = ref(false)
-const modalPhase = ref('processing') // 'processing'|'success'|'error'
+const modalPhase = ref('confirm') // 'confirm'|'processing'|'success'|'error'
 const modalTitle = ref('')
 const modalMsg   = ref('')
 const modalLines = ref([])
-
-function randomMsg(ok) {
-  const okMsgs  = ['Internet plan activated.', 'Subscription completed successfully.', 'Account credited with selected plan.']
-  const errMsgs = ['Payment could not be completed.', 'Provider timeout — please retry.', 'Insufficient fiat balance.']
-  return ok ? okMsgs[Math.floor(Math.random()*okMsgs.length)]
-            : errMsgs[Math.floor(Math.random()*errMsgs.length)]
-}
+const modalErrorCode = ref('')
 
 // Beneficiaries (save account/customer ID)
 const saveBeneficiary = ref(true)
 const { add } = useBeneficiaries()
 
 const submit = async () => {
-  if (!canSubmit.value) return
-  if (insufficient.value) return
+  if (!canSubmit.value || insufficient.value) return
   const provLabel = providers.find(p => p.value === provider.value)?.label || provider.value
 
   modalOpen.value = true
-  modalPhase.value = 'processing'
+  modalPhase.value = 'confirm'
   modalTitle.value = ''
   modalMsg.value = ''
+  modalErrorCode.value = ''
   modalLines.value = [
     { label: 'Provider',  value: provLabel },
     { label: 'Account ID',value: account.value },
@@ -128,38 +117,52 @@ const submit = async () => {
     { label: 'Amount',    value: '₦' + Number(selectedPlan.value?.price || 0).toLocaleString() },
     { label: 'Payment Source',    value: 'Fiat Balance (NGN)' },
   ]
+}
 
-  // mock API call
-  await new Promise(r => setTimeout(r, 1200))
-  const ok = Math.random() < 0.7
-  modalPhase.value = ok ? 'success' : 'error'
-  modalTitle.value  = ok ? 'Internet paid' : 'Payment failed'
-  modalMsg.value    = randomMsg(ok)
-
-  if (ok && saveBeneficiary.value) {
-    const label = `${provLabel} • ${account.value.slice(0,6)}…`
-    add({
-      service: 'internet',
-      kind: 'accountId',
-      providerId: provider.value,
-      label,
-      value: account.value,
+const onSubmitPin = async (pin) => {
+  modalErrorCode.value = ''
+  modalTitle.value = ''
+  modalMsg.value = ''
+  try {
+    modalPhase.value = 'processing'
+    const { data } = await post('/bills/internet', {
+      provider: provider.value,
+      account: account.value,
+      planId: bundleId.value,
+      pin,
     })
+
+    modalPhase.value = 'success'
+    modalTitle.value = 'Internet plan purchased'
+    modalMsg.value = data?.message || 'Your internet subscription has been activated.'
+
+    if (saveBeneficiary.value) {
+      const provLabel = providers.find(p => p.value === provider.value)?.label || provider.value
+      const label = `${provLabel} • ${account.value.slice(0, 6)}…`
+      add({
+        service: 'internet',
+        kind: 'accountId',
+        providerId: provider.value,
+        label,
+        value: account.value,
+      })
+    }
+  } catch (error) {
+    const msg = error?.response?.data?.message || 'Payment failed.'
+    modalMsg.value = msg
+    if (msg.toLowerCase().includes('pin')) {
+      modalErrorCode.value = 'invalid_pin'
+    }
+    modalPhase.value = 'error'
   }
 }
 
 const closeModal = () => (modalOpen.value = false)
 const retry = () => {
-  modalOpen.value = true
-  modalPhase.value = 'processing'
+  modalPhase.value = 'confirm'
   modalTitle.value = ''
   modalMsg.value = ''
-  setTimeout(() => {
-    const ok = Math.random() < 0.7
-    modalPhase.value = ok ? 'success' : 'error'
-    modalTitle.value  = ok ? 'Internet paid' : 'Payment failed'
-    modalMsg.value    = randomMsg(ok)
-  }, 900)
+  modalErrorCode.value = ''
 }
 </script>
 
@@ -200,15 +203,17 @@ const retry = () => {
       <DataBundleSelect
         v-model="bundleId"
         :options="plans"
-        :placeholder="loadingPlans ? 'Loading plans…' : 'Select Plan'"
+        :placeholder="loadingPlans ? 'Loading plans…' : (plansError ? 'Failed to load' : 'Select Plan')"
+        :disabled="!!plansError"
       />
-      <p class="mt-2 text-xs" :class="insufficient ? 'text-red-600' : 'text-gray-500'">
+      <p v-if="plansError" class="mt-2 text-xs text-red-600">{{ plansError }}</p>
+      <p v-else class="mt-2 text-xs" :class="insufficient ? 'text-red-600' : 'text-gray-500'">
         {{ balanceHint }}
       </p>
     </div>
 
     <!-- CTA -->
-    <Button class="w-full mt-6" :disabled="!canSubmit" @click="submit">
+    <Button class="w-full mt-6" :disabled="!canSubmit || loadingPlans" @click="submit">
       Purchase
     </Button>
 
@@ -219,6 +224,7 @@ const retry = () => {
       :title="modalTitle"
       :message="modalMsg"
       :details="modalLines"
+      :errorCode="modalErrorCode"
       @close="closeModal"
       @submit="onSubmitPin"
       @primary="closeModal"

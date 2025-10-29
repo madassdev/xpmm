@@ -35,40 +35,14 @@ class ElectricityService
             'amount'       => (int) $input['amount'],
             'reference'    => $ref,
         ];
-        if (!empty($input['callback_url'])) $payload['callback_url'] = $input['callback_url'];
+        if (!empty($input['callback_url'])) {
+            $payload['callback_url'] = $input['callback_url'];
+        }
 
         $path = $this->client->path('electricity', 'purchase_create');
         $res  = $this->client->post($path, $payload);
 
-        $tx = BillTransaction::create([
-            'reference'         => $ref,
-            'service'           => 'electricity',
-            'product'           => $input['disco'],
-            'account'           => $input['meter_no'],
-            'amount'            => (int) $input['amount'],
-            'currency'          => 'NGN',
-            'provider'          => 'redbiller',
-            'status'            => $res['ok'] ? strtoupper($res['json']['status'] ?? 'PENDING') : 'FAILED',
-            'request_payload'   => $payload,
-            'provider_response' => $res['json'] ?? ['raw' => $res['body']],
-            'meta'              => ['type' => $input['type']],
-        ]);
-
-        // If response already includes tokens, stash them
-        $tokens = $res['json']['tokens'] ?? $res['json']['data']['tokens'] ?? null;
-        if (is_array($tokens)) {
-            foreach ($tokens as $tk) {
-                ElectricityToken::create([
-                    'bill_transaction_id' => $tx->id,
-                    'token'     => $tk['token'] ?? ($tk['pin'] ?? ''),
-                    'units'     => isset($tk['units']) ? (int)$tk['units'] : null,
-                    'tariff_code' => $tk['tariff'] ?? null,
-                    'raw'       => $tk,
-                ]);
-            }
-        }
-
-        return ['reference' => $ref, 'response' => $res];
+        return ['reference' => $ref, 'payload' => $payload, 'response' => $res];
     }
 
     /** Poll status; update transaction; capture tokens if they arrive late */

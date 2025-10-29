@@ -1,9 +1,10 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
+import { post } from '@/lib/api'
 import Card from '@/Components/ui/Card.vue'
 import Button from '@/Components/ui/Button.vue'
 
-import SoftSelect from '@/Components/bills/SoftSelect.vue' // for Meter Type only
+import SoftSelect from '@/Components/bills/SoftSelect.vue'
 import ProviderLongSelect from '@/Components/bills/ProviderLongSelect.vue'
 import AccountInputWithBeneficiaries from '@/Components/bills/shared/AccountInputWithBeneficiaries.vue'
 import BillsPayModal from '@/Components/bills/shared/BillsPayModal.vue'
@@ -19,44 +20,47 @@ const meterTypes = [
   { value: 'postpaid', label: 'Postpaid' },
 ]
 
-// 2) Discos list (base names)
+// 2) Discos list (value matches backend expectation)
 const discos = [
-  'Abuja Electricity', 'Ikeja Electricity', 'Eko Electricity',
-  'Ibadan Electricity', 'Benin Electricity', 'Enugu Electricity',
-  'Jos Electricity', 'Kano Electricity', 'Kaduna Electricity',
-  'Port Harcourt Electricity'
+  { value: 'aedc', name: 'Abuja Electricity (AEDC)' },
+  { value: 'ikedc', name: 'Ikeja Electricity (IKEDC)' },
+  { value: 'ekedc', name: 'Eko Electricity (EKEDC)' },
+  { value: 'ibedc', name: 'Ibadan Electricity (IBEDC)' },
+  { value: 'bedc', name: 'Benin Electricity (BEDC)' },
+  { value: 'eedc', name: 'Enugu Electricity (EEDC)' },
+  { value: 'jed',  name: 'Jos Electricity (JED)' },
+  { value: 'kedco', name: 'Kano Electricity (KEDCO)' },
+  { value: 'kaedco', name: 'Kaduna Electricity (KAEDCO)' },
+  { value: 'phed', name: 'Port Harcourt Electricity (PHED)' },
 ]
 
 // Form state
-const meterType = ref('')        // prepaid | postpaid
-const provider  = ref('')        // computed id
+const meterType = ref('')
+const provider  = ref('')
 const meterNo   = ref('')
 const amount    = ref('')
 
-// Amount chips (tweak to your liking)
+const validating = ref(false)
+const validationError = ref('')
+const customer = ref(null)
+
 const chips = [1000, 2000, 5000, 10000, 20000]
 const onlyDigits = (v) => (v || '').replace(/[^\d]/g, '')
 const setChip = (n) => (amount.value = String(n))
 
-// Derived provider options from meterType
-const providerOptions = computed(() => {
-  if (!meterType.value) return []
-  const suffix = meterTypes.find(m => m.value === meterType.value)?.label || ''
-  return discos.map(name => {
-    const id = `${name.toLowerCase().replace(/\s+/g, '-')}-${meterType.value}`
-    return { id, name: `${name} - ${suffix}` }
-  })
+const providerOptions = computed(() => discos.map(d => ({ id: d.value, name: d.name })))
+
+watch([provider, meterType, meterNo], () => {
+  validationError.value = ''
+  customer.value = null
 })
 
-// Reset provider when type changes
-watch(meterType, () => { provider.value = '' })
-
-// Validation
 const fiatBalance = computed(() => Number.isFinite(props.balance) ? Number(props.balance) : 0)
 const amountValue = computed(() => Number(amount.value || 0))
 const insufficient = computed(() => amountValue.value > fiatBalance.value)
+
 const canSubmit = computed(() =>
-  meterType.value && provider.value && meterNo.value.length >= 6 && amountValue.value > 0 && !insufficient.value
+  meterType.value && provider.value && meterNo.value.length >= 6 && amountValue.value > 0 && !insufficient.value && customer.value
 )
 
 const balanceHint = computed(() => {
@@ -69,71 +73,116 @@ const balanceHint = computed(() => {
   return 'Fiat balance selected for this payment.'
 })
 
-// Modal state
 const modalOpen  = ref(false)
-const modalPhase = ref('processing') // 'processing'|'success'|'error'
+const modalPhase = ref('confirm')
 const modalTitle = ref('')
 const modalMsg   = ref('')
 const modalLines = ref([])
-
-function randomMsg(ok) {
-  const okMsgs  = ['Payment successful.', 'Meter recharged successfully.', 'Token delivered to your meter account.']
-  const errMsgs = ['Payment could not be completed.', 'Disco timeout — please retry.', 'Insufficient fiat balance.']
-  return ok ? okMsgs[Math.floor(Math.random()*okMsgs.length)]
-            : errMsgs[Math.floor(Math.random()*errMsgs.length)]
-}
+const modalErrorCode = ref('')
 
 // Save beneficiary (meter)
 const saveBeneficiary = ref(true)
 const { add } = useBeneficiaries()
 
+const validateMeter = async () => {
+  validationError.value = ''
+  customer.value = null
+  if (!provider.value || !meterType.value || meterNo.value.length < 6) {
+    validationError.value = 'Select provider, meter type and enter a valid meter number.'
+    return
+  }
+  validating.value = true
+  try {
+    const { data } = await post('/bills/electricity/validate', {
+      disco: provider.value,
+      type: meterType.value,
+      meter_no: meterNo.value,
+    })
+    customer.value = data?.customer || null
+    validationError.value = ''
+  } catch (error) {
+    validationError.value = error?.response?.data?.message || 'Unable to validate meter.'
+    customer.value = null
+  } finally {
+    validating.value = false
+  }
+}
+
 const submit = async () => {
   if (!canSubmit.value) return
   if (insufficient.value) return
-  modalOpen.value = true
-  modalPhase.value = 'processing'
-  modalTitle.value = ''
-  modalMsg.value   = ''
   const providerName = providerOptions.value.find(o => o.id === provider.value)?.name || provider.value
+
+  modalOpen.value = true
+  modalPhase.value = 'confirm'
+  modalTitle.value = ''
+  modalMsg.value = ''
+  modalErrorCode.value = ''
   modalLines.value = [
-    { label: 'Meter Type', value: meterTypes.find(m=>m.value===meterType.value)?.label || meterType.value },
+    { label: 'Meter Type', value: meterTypes.find(m => m.value === meterType.value)?.label || meterType.value },
     { label: 'Provider',   value: providerName },
     { label: 'Meter',      value: meterNo.value },
+    customer.value?.name ? { label: 'Customer', value: customer.value.name } : null,
     { label: 'Amount',     value: '₦' + Number(amount.value).toLocaleString() },
     { label: 'Payment Source',     value: 'Fiat Balance (NGN)' },
-  ]
+  ].filter(Boolean)
+}
 
-  // mock API
-  await new Promise(r => setTimeout(r, 1200))
-  const ok = Math.random() < 0.7
-  modalPhase.value = ok ? 'success' : 'error'
-  modalTitle.value  = ok ? 'Electricity paid' : 'Payment failed'
-  modalMsg.value    = randomMsg(ok)
-
-  if (ok && saveBeneficiary.value) {
-    const label = `${providerName} • ${meterNo.value.slice(0,6)}…`
-    add({
-      service: 'electricity',
-      kind: 'meter',
-      providerId: provider.value,
-      label,
-      value: meterNo.value,
+const onSubmitPin = async (pin) => {
+  modalErrorCode.value = ''
+  modalTitle.value = ''
+  modalMsg.value = ''
+  try {
+    modalPhase.value = 'processing'
+    const providerName = providerOptions.value.find(o => o.id === provider.value)?.name || provider.value
+    const { data } = await post('/bills/electricity', {
+      disco: provider.value,
+      type: meterType.value,
+      meter_no: meterNo.value,
+      amount: Number(amount.value),
+      pin,
     })
+
+    modalPhase.value = 'success'
+    modalTitle.value = 'Electricity purchase created'
+    modalMsg.value = data?.message || 'Meter purchase initiated successfully.'
+
+    if (Array.isArray(data?.tokens) && data.tokens.length) {
+      modalLines.value = [
+        ...modalLines.value,
+        ...data.tokens.map((token, idx) => ({
+          label: `Token ${idx + 1}`,
+          value: token.units ? `${token.token} (${token.units} units)` : token.token,
+        })),
+      ]
+    }
+
+    if (saveBeneficiary.value) {
+      const label = `${providerName} • ${meterNo.value.slice(0, 6)}…`
+      add({
+        service: 'electricity',
+        kind: 'meter',
+        providerId: provider.value,
+        label,
+        value: meterNo.value,
+      })
+    }
+  } catch (error) {
+    const msg = error?.response?.data?.message || 'Payment failed.'
+    modalMsg.value = msg
+    if (msg.toLowerCase().includes('pin')) {
+      modalErrorCode.value = 'invalid_pin'
+    }
+    modalPhase.value = 'error'
   }
 }
 
 const closeModal = () => (modalOpen.value = false)
 const retry = () => {
-  modalOpen.value = true
-  modalPhase.value = 'processing'
+  modalPhase.value = 'confirm'
   modalTitle.value = ''
   modalMsg.value = ''
-  setTimeout(() => {
-    const ok = Math.random() < 0.7
-    modalPhase.value = ok ? 'success' : 'error'
-    modalTitle.value  = ok ? 'Electricity paid' : 'Payment failed'
-    modalMsg.value    = randomMsg(ok)
-  }, 900)
+  modalErrorCode.value = ''
 }
 </script>
 
@@ -166,7 +215,7 @@ const retry = () => {
     </div>
 
     <!-- Meter Number with beneficiaries -->
-    <div class="mt-4">
+    <div class="mt-4 space-y-3">
       <AccountInputWithBeneficiaries
         v-model="meterNo"
         service="electricity"
@@ -175,7 +224,24 @@ const retry = () => {
         placeholder="Meter Number"
         :digitsOnly="true"
       />
-      <label class="mt-2 inline-flex items-center gap-2 text-sm text-gray-600">
+      <div class="flex items-start gap-3">
+        <Button size="sm" variant="outline" class="shrink-0" :disabled="validating" @click="validateMeter">
+          <span v-if="validating" class="inline-flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+            Validating…
+          </span>
+          <span v-else>Validate Meter</span>
+        </Button>
+        <div class="text-xs text-gray-600 flex-1">
+          <template v-if="customer">
+            <div class="font-medium text-gray-800">{{ customer.name }}</div>
+            <div v-if="customer.address" class="text-gray-500">{{ customer.address }}</div>
+          </template>
+          <p v-else-if="validationError" class="text-red-600">{{ validationError }}</p>
+          <p v-else class="text-gray-500">Confirm beneficiary details before payment.</p>
+        </div>
+      </div>
+      <label class="inline-flex items-center gap-2 text-sm text-gray-600">
         <input type="checkbox" v-model="saveBeneficiary" class="rounded border-gray-300 text-primary focus:ring-primary" />
         Save meter
       </label>
@@ -193,7 +259,7 @@ const retry = () => {
       />
     </div>
 
-    <!-- Chips (new) -->
+    <!-- Chips -->
     <div class="mt-3 grid grid-cols-2 sm:grid-cols-5 gap-3">
       <button
         v-for="c in chips"
@@ -221,7 +287,9 @@ const retry = () => {
       :title="modalTitle"
       :message="modalMsg"
       :details="modalLines"
+      :errorCode="modalErrorCode"
       @close="closeModal"
+      @submit="onSubmitPin"
       @primary="closeModal"
       @secondary="retry"
     />
